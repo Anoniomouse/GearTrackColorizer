@@ -203,10 +203,13 @@ local function BuildPanel()
     end)
 end
 
--- ── Register with Settings API ────────────────────────────────────────────
+-- ── Register with Settings API + Addon Compartment ───────────────────────
 --
--- PLAYER_LOGIN is used instead of ADDON_LOADED so the Settings API and DB
--- are both fully ready before we build the panel and register the category.
+-- PLAYER_LOGIN: DB and Settings API are both fully ready.
+-- Settings.RegisterAddOnCategory  → Esc > Interface > AddOns list
+-- AddonCompartment.RegisterAddon  → puzzle-piece button near the minimap
+
+local settingsCategory  -- upvalue so the compartment func can reference it
 
 local settingsFrame = CreateFrame("Frame")
 settingsFrame:RegisterEvent("PLAYER_LOGIN")
@@ -216,6 +219,25 @@ settingsFrame:SetScript("OnEvent", function(self, event)
 
     BuildPanel()
 
-    local category = Settings.RegisterCanvasLayoutCategory(panel, addonName)
-    Settings.RegisterAddOnCategory(category)
+    settingsCategory = Settings.RegisterCanvasLayoutCategory(panel, addonName)
+    Settings.RegisterAddOnCategory(settingsCategory)
+
+    -- Addon compartment (puzzle-piece / grid icon near minimap)
+    if AddonCompartment then
+        AddonCompartment.RegisterAddon({
+            text         = addonName,
+            icon         = "Interface\\Icons\\INV_Misc_Gear_01",
+            notCheckable = true,
+            func = function()
+                Settings.OpenToCategory(settingsCategory)
+            end,
+            funcOnEnter  = function(_, inputData)
+                GameTooltip:SetOwner(inputData and inputData.rootDescription or UIParent, "ANCHOR_LEFT")
+                GameTooltip:SetText(addonName, 1, 1, 1)
+                GameTooltip:AddLine("Click to open settings", 0.8, 0.8, 0.8)
+                GameTooltip:Show()
+            end,
+            funcOnLeave  = function() GameTooltip:Hide() end,
+        })
+    end
 end)
