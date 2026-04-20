@@ -160,8 +160,9 @@ local function ApplyTooltipColor(tooltip, _data)
     if tooltip == scanTT then return end
     if not GearTrackColorizerDB or not GearTrackColorizerDB.enabled then return end
 
-    local _, itemLink = tooltip:GetItem()
-    if not itemLink then return end
+    if type(tooltip.GetItem) ~= "function" then return end
+    local ok, _, itemLink = pcall(tooltip.GetItem, tooltip)
+    if not ok or not itemLink then return end
 
     local color, trackName = GetTrackColor(itemLink)
     if not color then return end
