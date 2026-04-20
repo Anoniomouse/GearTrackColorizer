@@ -1,30 +1,28 @@
 local addonName, ns = ...
 
 -- ── Settings panel ────────────────────────────────────────────────────────
+-- Registered via Settings.RegisterCanvasLayoutCategory (12.0 API).
+-- Opens from: Esc → Interface → AddOns → GearTrackColorizer
+--         and: minimap addon compartment (puzzle-piece button)
 --
--- Registered as a canvas-layout category so we have full layout control.
--- Opens via Esc → Interface → AddOns → GearTrackColorizer.
+-- IMPORTANT: panel must have an explicit size and start hidden.
+-- Registration happens on PLAYER_LOGIN — both the DB and Settings API are
+-- guaranteed ready at that point.
 
-local PANEL_W, PANEL_H = 600, 500
-local COL1_X           = 16
-local ROW_H            = 36
-local SWATCH_SIZE      = 24
+local PANEL_W     = 700
+local PANEL_H     = 560
+local COL_X       = 16
+local ROW_H       = 36
+local SWATCH_SIZE = 24
 
 local panel = CreateFrame("Frame")
 panel.name  = addonName
-panel:SetSize(700, 560)
-panel:Hide()   -- WoW shows/hides it; don't let it float over the game world
+panel:SetSize(PANEL_W, PANEL_H)
+panel:Hide()
 
--- ── Helpers ───────────────────────────────────────────────────────────────
+-- ── Widget helpers ────────────────────────────────────────────────────────
 
-local function Header(parent, text, x, y)
-    local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    fs:SetPoint("TOPLEFT", x, y)
-    fs:SetText(text)
-    return fs
-end
-
-local function Label(parent, text, x, y, template)
+local function MakeLabel(parent, text, x, y, template)
     local fs = parent:CreateFontString(nil, "ARTWORK", template or "GameFontNormal")
     fs:SetPoint("TOPLEFT", x, y)
     fs:SetText(text)
@@ -36,33 +34,27 @@ local function MakeCheckbox(parent, labelText, x, y, getter, setter)
     cb:SetPoint("TOPLEFT", x, y)
     cb.text:SetText(labelText)
     cb:SetChecked(getter())
-    cb:SetScript("OnClick", function(self)
-        setter(self:GetChecked())
-    end)
+    cb:SetScript("OnClick", function(self) setter(self:GetChecked()) end)
     return cb
 end
 
--- Coloured square that opens the system colour picker on click
+-- Coloured square that opens the system colour picker on click.
+-- Stores a Refresh() method so Reset buttons can revert the swatch colour.
 local function MakeSwatch(parent, trackName, x, y)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(SWATCH_SIZE, SWATCH_SIZE)
     btn:SetPoint("TOPLEFT", x, y)
 
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-
-    local border = btn:CreateTexture(nil, "BORDER")
+    -- Thin black border behind the fill
+    local border = btn:CreateTexture(nil, "BACKGROUND")
     border:SetAllPoints()
     border:SetTexture("Interface\\Buttons\\WHITE8X8")
     border:SetVertexColor(0, 0, 0)
 
     local fill = btn:CreateTexture(nil, "ARTWORK")
-    fill:SetPoint("TOPLEFT", 1, -1)
+    fill:SetPoint("TOPLEFT",     1, -1)
     fill:SetPoint("BOTTOMRIGHT", -1, 1)
     fill:SetTexture("Interface\\Buttons\\WHITE8X8")
-
-    btn.fill = fill
 
     local function Refresh()
         local c = GearTrackColorizerDB.colors[trackName]
@@ -72,7 +64,7 @@ local function MakeSwatch(parent, trackName, x, y)
 
     btn:SetScript("OnClick", function()
         local c    = GearTrackColorizerDB.colors[trackName]
-        local prev = {r = c[1], g = c[2], b = c[3]}
+        local prev = {c[1], c[2], c[3]}
 
         ColorPickerFrame:SetupColorPickerAndShow({
             r = c[1], g = c[2], b = c[3],
@@ -84,28 +76,23 @@ local function MakeSwatch(parent, trackName, x, y)
                 ns.UpdateAllBagButtons()
             end,
             cancelFunc = function()
-                GearTrackColorizerDB.colors[trackName] = {prev.r, prev.g, prev.b}
-                fill:SetVertexColor(prev.r, prev.g, prev.b)
+                GearTrackColorizerDB.colors[trackName] = {prev[1], prev[2], prev[3]}
+                fill:SetVertexColor(prev[1], prev[2], prev[3])
                 ns.UpdateAllSlots()
                 ns.UpdateAllBagButtons()
             end,
         })
     end)
 
-    btn:SetScript("OnEnter", function(self)
-        self:SetAlpha(0.7)
-    end)
-    btn:SetScript("OnLeave", function(self)
-        self:SetAlpha(1)
-    end)
-
+    btn:SetScript("OnEnter", function(self) self:SetAlpha(0.7) end)
+    btn:SetScript("OnLeave", function(self) self:SetAlpha(1.0) end)
     btn.Refresh = Refresh
     return btn
 end
 
-local function MakeResetButton(parent, text, x, y, onClick)
+local function MakeButton(parent, text, w, x, y, onClick)
     local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    btn:SetSize(80, 22)
+    btn:SetSize(w, 22)
     btn:SetPoint("TOPLEFT", x, y)
     btn:SetText(text)
     btn:SetScript("OnClick", onClick)
@@ -114,74 +101,71 @@ end
 
 -- ── Build panel contents ──────────────────────────────────────────────────
 
-local swatches = {}  -- [trackName] = swatch widget, for Reset All
+local swatches = {}  -- [trackName] = swatch, used by Reset All
 
 local function BuildPanel()
-    local db = GearTrackColorizerDB
-
     local curY = -16
 
-    Header(panel, "GearTrackColorizer", COL1_X, curY)
+    MakeLabel(panel, "GearTrackColorizer", COL_X, curY, "GameFontNormalLarge")
     curY = curY - 32
 
     -- Enable toggle
-    MakeCheckbox(panel, "Enable addon", COL1_X, curY,
-        function() return db.enabled end,
+    MakeCheckbox(panel, "Enable addon", COL_X, curY,
+        function() return GearTrackColorizerDB.enabled end,
         function(v)
-            db.enabled = v
+            GearTrackColorizerDB.enabled = v
             if v then ns.UpdateAllSlots() ns.UpdateAllBagButtons()
             else       ns.ClearAllSlots() ns.ClearAllBagButtons() end
         end)
     curY = curY - ROW_H
 
     -- Bag borders toggle
-    MakeCheckbox(panel, "Color borders in bags", COL1_X, curY,
-        function() return db.bagBorders end,
+    MakeCheckbox(panel, "Color borders in bags", COL_X, curY,
+        function() return GearTrackColorizerDB.bagBorders end,
         function(v)
-            db.bagBorders = v
+            GearTrackColorizerDB.bagBorders = v
             if v then ns.UpdateAllBagButtons()
             else       ns.ClearAllBagButtons() end
         end)
-    curY = curY - ROW_H + 4
+    curY = curY - ROW_H
 
     -- Border thickness slider
-    Label(panel, "Border Thickness", COL1_X, curY)
-    curY = curY - 20
+    MakeLabel(panel, "Border Thickness", COL_X, curY)
+    curY = curY - 22
 
     local slider = CreateFrame("Slider", "GearTrackColorizerThicknessSlider", panel, "OptionsSliderTemplate")
-    slider:SetPoint("TOPLEFT", COL1_X + 4, curY)
+    slider:SetPoint("TOPLEFT", COL_X + 4, curY)
     slider:SetWidth(200)
     slider:SetMinMaxValues(1, 6)
     slider:SetValueStep(1)
     slider:SetObeyStepOnDrag(true)
-    slider:SetValue(db.borderThickness)
+    slider:SetValue(GearTrackColorizerDB.borderThickness)
     _G[slider:GetName() .. "Low"]:SetText("1")
     _G[slider:GetName() .. "High"]:SetText("6")
-    _G[slider:GetName() .. "Text"]:SetText(db.borderThickness .. " px")
+    _G[slider:GetName() .. "Text"]:SetText(GearTrackColorizerDB.borderThickness .. " px")
 
     slider:SetScript("OnValueChanged", function(self, val)
         val = math.floor(val + 0.5)
-        db.borderThickness = val
+        GearTrackColorizerDB.borderThickness = val
         _G[self:GetName() .. "Text"]:SetText(val .. " px")
         ns.UpdateAllSlots()
         ns.UpdateAllBagButtons()
     end)
-    curY = curY - 40
+    curY = curY - 44
 
-    -- Track colour rows
-    Label(panel, "Track Colors", COL1_X, curY, "GameFontNormalLarge")
+    -- Track color rows
+    MakeLabel(panel, "Track Colors", COL_X, curY, "GameFontNormalLarge")
     curY = curY - 28
 
     for _, trackName in ipairs(ns.TRACK_ORDER) do
-        local def = ns.TRACK_DEFAULTS[trackName]
-
-        Label(panel, trackName, COL1_X + SWATCH_SIZE + 8, curY + 6)
-
-        local swatch = MakeSwatch(panel, trackName, COL1_X, curY)
+        local def    = ns.TRACK_DEFAULTS[trackName]
+        local swatch = MakeSwatch(panel, trackName, COL_X, curY)
         swatches[trackName] = swatch
 
-        MakeResetButton(panel, "Reset", COL1_X + SWATCH_SIZE + 90, curY + 1, function()
-            db.colors[trackName] = {def[1], def[2], def[3]}
+        MakeLabel(panel, trackName, COL_X + SWATCH_SIZE + 8, curY + 5)
+
+        MakeButton(panel, "Reset", 70, COL_X + SWATCH_SIZE + 90, curY, function()
+            GearTrackColorizerDB.colors[trackName] = {def[1], def[2], def[3]}
             swatch.Refresh()
             ns.UpdateAllSlots()
             ns.UpdateAllBagButtons()
@@ -192,37 +176,31 @@ local function BuildPanel()
 
     curY = curY - 8
 
-    -- Reset all colours
-    MakeResetButton(panel, "Reset All", COL1_X, curY, function()
-        for trackName2, def2 in pairs(ns.TRACK_DEFAULTS) do
-            db.colors[trackName2] = {def2[1], def2[2], def2[3]}
-            if swatches[trackName2] then swatches[trackName2].Refresh() end
+    MakeButton(panel, "Reset All Colors", 120, COL_X, curY, function()
+        for _, name in ipairs(ns.TRACK_ORDER) do
+            local d = ns.TRACK_DEFAULTS[name]
+            GearTrackColorizerDB.colors[name] = {d[1], d[2], d[3]}
+            if swatches[name] then swatches[name].Refresh() end
         end
         ns.UpdateAllSlots()
         ns.UpdateAllBagButtons()
     end)
 end
 
--- ── Register with Settings API + Addon Compartment ───────────────────────
---
--- PLAYER_LOGIN: DB and Settings API are both fully ready.
--- Settings.RegisterAddOnCategory  → Esc > Interface > AddOns list
--- AddonCompartment.RegisterAddon  → puzzle-piece button near the minimap
+-- ── Register with Settings API and addon compartment ─────────────────────
 
-local settingsCategory  -- upvalue so the compartment func can reference it
+local settingsCategory
 
-local settingsFrame = CreateFrame("Frame")
-settingsFrame:RegisterEvent("PLAYER_LOGIN")
-settingsFrame:SetScript("OnEvent", function(self, event)
-    if event ~= "PLAYER_LOGIN" then return end
+local loginFrame = CreateFrame("Frame")
+loginFrame:RegisterEvent("PLAYER_LOGIN")
+loginFrame:SetScript("OnEvent", function(self)
     self:UnregisterEvent("PLAYER_LOGIN")
-
     BuildPanel()
 
     settingsCategory = Settings.RegisterCanvasLayoutCategory(panel, addonName)
     Settings.RegisterAddOnCategory(settingsCategory)
 
-    -- Addon compartment (puzzle-piece / grid icon near minimap)
+    -- Minimap puzzle-piece compartment button (guarded; may not exist in all patches)
     if AddonCompartment then
         AddonCompartment.RegisterAddon({
             text         = addonName,
@@ -231,13 +209,14 @@ settingsFrame:SetScript("OnEvent", function(self, event)
             func = function()
                 Settings.OpenToCategory(settingsCategory)
             end,
-            funcOnEnter  = function(_, inputData)
-                GameTooltip:SetOwner(inputData and inputData.rootDescription or UIParent, "ANCHOR_LEFT")
+            funcOnEnter = function(_, inputData)
+                local anchor = (inputData and inputData.rootDescription) or UIParent
+                GameTooltip:SetOwner(anchor, "ANCHOR_LEFT")
                 GameTooltip:SetText(addonName, 1, 1, 1)
                 GameTooltip:AddLine("Click to open settings", 0.8, 0.8, 0.8)
                 GameTooltip:Show()
             end,
-            funcOnLeave  = function() GameTooltip:Hide() end,
+            funcOnLeave = function() GameTooltip:Hide() end,
         })
     end
 end)
