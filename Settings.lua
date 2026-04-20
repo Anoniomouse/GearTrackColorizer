@@ -12,6 +12,8 @@ local SWATCH_SIZE      = 24
 
 local panel = CreateFrame("Frame")
 panel.name  = addonName
+panel:SetSize(700, 560)
+panel:Hide()   -- WoW shows/hides it; don't let it float over the game world
 
 -- ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -202,17 +204,18 @@ local function BuildPanel()
 end
 
 -- ── Register with Settings API ────────────────────────────────────────────
+--
+-- PLAYER_LOGIN is used instead of ADDON_LOADED so the Settings API and DB
+-- are both fully ready before we build the panel and register the category.
 
-local function OnAddonLoaded(_, event, arg1)
-    if event ~= "ADDON_LOADED" or arg1 ~= addonName then return end
+local settingsFrame = CreateFrame("Frame")
+settingsFrame:RegisterEvent("PLAYER_LOGIN")
+settingsFrame:SetScript("OnEvent", function(self, event)
+    if event ~= "PLAYER_LOGIN" then return end
+    self:UnregisterEvent("PLAYER_LOGIN")
 
-    -- DB is already initialised by Core.lua (same ADDON_LOADED, but Core loads first)
     BuildPanel()
 
     local category = Settings.RegisterCanvasLayoutCategory(panel, addonName)
     Settings.RegisterAddOnCategory(category)
-end
-
-local settingsFrame = CreateFrame("Frame")
-settingsFrame:RegisterEvent("ADDON_LOADED")
-settingsFrame:SetScript("OnEvent", OnAddonLoaded)
+end)
