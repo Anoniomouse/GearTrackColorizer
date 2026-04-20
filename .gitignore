@@ -1,0 +1,13 @@
+# WoW saved variables (generated at runtime)
+*.bak
+WTF/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+*.swp
+*~

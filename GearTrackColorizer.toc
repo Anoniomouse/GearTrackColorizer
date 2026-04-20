@@ -1,0 +1,10 @@
+## Interface: 110107
+## Interface-Retail: 110107
+## Title: GearTrackColorizer
+## Notes: Colors equipped gear slots and tooltips by upgrade track (Explorer, Adventurer, Veteran, Champion, Hero, Myth)
+## Author:
+## Version: 1.0.0
+## SavedVariables: GearTrackColorizerDB
+
+Tracks.lua
+Core.lua
