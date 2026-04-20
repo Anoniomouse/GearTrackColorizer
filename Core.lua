@@ -9,12 +9,9 @@ local SLOT_NAMES    = ns.SLOT_NAMES
 local function InitDB()
     GearTrackColorizerDB = GearTrackColorizerDB or {}
     local db = GearTrackColorizerDB
-    if db.enabled      == nil then db.enabled      = true end
-    if db.bagBorders   == nil then db.bagBorders   = true end
-    if db.borderThickness == nil then
-        db.borderThickness = ns.DEFAULT_BORDER_THICKNESS
-    end
-    -- Seed per-track colors from defaults, preserving any saved customisations
+    if db.enabled         == nil then db.enabled         = true end
+    if db.bagBorders      == nil then db.bagBorders      = true end
+    if db.borderThickness == nil then db.borderThickness = ns.DEFAULT_BORDER_THICKNESS end
     db.colors = db.colors or {}
     for trackName, def in pairs(ns.TRACK_DEFAULTS) do
         if not db.colors[trackName] then
@@ -24,27 +21,25 @@ local function InitDB()
 end
 
 -- ── Hidden scan tooltip ────────────────────────────────────────────────────
+-- Used to read tooltip lines without displaying anything.
+-- IMPORTANT: ApplyTooltipColor guards against this tooltip to prevent
+-- TooltipDataProcessor from recursing back into GetTrackColor.
 
 local scanTT = CreateFrame("GameTooltip", "GearTrackColorizerScanTT", nil, "GameTooltipTemplate")
 scanTT:SetOwner(WorldFrame, "ANCHOR_NONE")
 
 -- ── Track detection ────────────────────────────────────────────────────────
+-- C_ItemUpgrade has no API that accepts an item link and returns a track name.
+-- (GetItemUpgradeItemInfo() takes no args and only works for the upgrade UI.)
+-- Tooltip-line scanning is the only reliable cross-patch detection method.
 
 local function GetTrackColor(itemLink)
     if not itemLink or not GearTrackColorizerDB then return nil end
     local dbColors = GearTrackColorizerDB.colors
 
-    -- C_ItemUpgrade API (most reliable)
-    if C_ItemUpgrade and C_ItemUpgrade.GetItemUpgradeInfo then
-        local ok, info = pcall(C_ItemUpgrade.GetItemUpgradeInfo, itemLink)
-        if ok and info and info.trackName and dbColors[info.trackName] then
-            return dbColors[info.trackName], info.trackName
-        end
-    end
-
-    -- Fallback: parse hidden tooltip text for known track names
     scanTT:ClearLines()
-    if not pcall(function() scanTT:SetHyperlink(itemLink) end) then return nil end
+    local ok = pcall(function() scanTT:SetHyperlink(itemLink) end)
+    if not ok or scanTT:NumLines() == 0 then return nil end
 
     for i = 1, scanTT:NumLines() do
         local region = _G["GearTrackColorizerScanTTTextLeft" .. i]
@@ -52,7 +47,7 @@ local function GetTrackColor(itemLink)
         if line then
             for trackName, aliases in pairs(TRACK_ALIASES) do
                 for _, alias in ipairs(aliases) do
-                    if line:find(alias) and dbColors[trackName] then
+                    if line:find(alias, 1, true) and dbColors[trackName] then
                         return dbColors[trackName], trackName
                     end
                 end
@@ -64,7 +59,10 @@ end
 
 ns.GetTrackColor = GetTrackColor
 
--- ── Border rendering (shared by equipped slots and bag buttons) ────────────
+-- ── Border rendering ───────────────────────────────────────────────────────
+-- Four thin edge-textures at OVERLAY layer. Intentionally avoids button.IconBorder
+-- because SetItemButtonQuality() resets IconBorder color to item quality color,
+-- which would fight with our track color on every frame refresh.
 
 local function SetItemBorder(frame, r, g, b)
     if not frame then return end
@@ -113,10 +111,10 @@ end
 
 ns.SetItemBorder = SetItemBorder
 
--- ── Equipped gear slots (Character frame) ─────────────────────────────────
+-- ── Equipped gear slots ────────────────────────────────────────────────────
 
 local function UpdateAllSlots()
-    if not GearTrackColorizerDB.enabled then return end
+    if not GearTrackColorizerDB or not GearTrackColorizerDB.enabled then return end
     for _, slotID in ipairs(GEAR_SLOTS) do
         local slotFrame = _G[SLOT_NAMES[slotID] or ""]
         if slotFrame then
@@ -143,23 +141,27 @@ ns.UpdateAllSlots = UpdateAllSlots
 ns.ClearAllSlots  = ClearAllSlots
 
 -- ── Tooltip coloring ───────────────────────────────────────────────────────
---
--- OnTooltipSetItem was removed in 12.0. Use TooltipDataProcessor which
--- fires for every tooltip type (GameTooltip, shopping, ItemRef, etc.)
--- automatically, so no per-tooltip hooking is needed.
+-- TooltipDataProcessor.AddTooltipPostCall fires for every tooltip, including
+-- our hidden scanTT. Guard against scanTT to prevent GetTrackColor recursing
+-- into itself via the data processor.
+-- Do NOT call tooltip:Show() here — it re-fires the data processor pipeline.
 
-local function ApplyTooltipColor(tooltip)
+local function ApplyTooltipColor(tooltip, _data)
+    if tooltip == scanTT then return end  -- recursion guard
     if not GearTrackColorizerDB or not GearTrackColorizerDB.enabled then return end
+
     local _, itemLink = tooltip:GetItem()
     if not itemLink then return end
+
     local color, trackName = GetTrackColor(itemLink)
     if not color then return end
 
-    local nameLine = _G[tooltip:GetName() .. "TextLeft1"]
+    local name = tooltip:GetName()
+    local nameLine = _G[name .. "TextLeft1"]
     if nameLine then nameLine:SetTextColor(color[1], color[2], color[3]) end
 
-    local line2 = _G[tooltip:GetName() .. "TextLeft2"]
-    if line2 and not (line2:GetText() or ""):find(trackName) then
+    local line2 = _G[name .. "TextLeft2"]
+    if line2 and not (line2:GetText() or ""):find(trackName, 1, true) then
         tooltip:AddLine(string.format("|cff%02x%02x%02xTrack: %s|r",
             color[1] * 255, color[2] * 255, color[3] * 255, trackName))
     end
@@ -168,7 +170,6 @@ end
 if TooltipDataProcessor then
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, ApplyTooltipColor)
 else
-    -- Fallback for WoW versions that still have OnTooltipSetItem
     local function HookTooltip(tt)
         if tt and tt.HookScript and tt:HasScript("OnTooltipSetItem") then
             tt:HookScript("OnTooltipSetItem", function(self) ApplyTooltipColor(self) end)
@@ -176,9 +177,7 @@ else
     end
     HookTooltip(GameTooltip)
     HookTooltip(ItemRefTooltip)
-    for _, tt in ipairs(GameTooltip.shoppingTooltips or {ShoppingTooltip1, ShoppingTooltip2}) do
-        HookTooltip(tt)
-    end
+    for _, tt in ipairs(GameTooltip.shoppingTooltips or {}) do HookTooltip(tt) end
 end
 
 -- ── Events ─────────────────────────────────────────────────────────────────
@@ -193,7 +192,8 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         InitDB()
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
-        local version = (C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata)(addonName, "Version") or "?"
+        local getmeta = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
+        local version = getmeta(addonName, "Version") or "?"
         local status  = GearTrackColorizerDB.enabled and "|cff00ff00ON|r" or "|cffff4444OFF|r"
         print(string.format("|cffffcc00GearTrackColorizer|r v%s  [%s]", version, status))
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
@@ -201,7 +201,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     end
 end)
 
-hooksecurefunc("CharacterFrame_OnShow", function() UpdateAllSlots() end)
+-- CharacterFrame_OnShow may not exist in all patches; guard the hook
+if CharacterFrame_OnShow then
+    hooksecurefunc("CharacterFrame_OnShow", UpdateAllSlots)
+end
 
 -- ── Slash commands ─────────────────────────────────────────────────────────
 
