@@ -167,11 +167,6 @@ local function ApplyTooltipColor(tooltip, _data)
     if not color then return end
 
     local ttName = tooltip:GetName()
-    local nameLine = ttName and _G[ttName .. "TextLeft1"]
-    if nameLine then
-        nameLine:SetTextColor(color[1], color[2], color[3])
-    end
-
     local line2 = ttName and _G[ttName .. "TextLeft2"]
     if line2 and not (line2:GetText() or ""):find(trackName, 1, true) then
         tooltip:AddLine(string.format("|cff%02x%02x%02xTrack: %s|r",
