@@ -79,6 +79,7 @@ ns.ClearAllBagButtons  = ClearAllBagButtons
 -- ContainerFrameItemButton_Update fires for every Blizzard bag slot refresh.
 -- Catching it here avoids needing BAG_UPDATE polling for the default UI.
 
+if ContainerFrameItemButton_Update then
 hooksecurefunc("ContainerFrameItemButton_Update", function(button)
     if not GearTrackColorizerDB or
        not GearTrackColorizerDB.enabled or
@@ -96,6 +97,7 @@ hooksecurefunc("ContainerFrameItemButton_Update", function(button)
         ns.SetItemBorder(button, nil)
     end
 end)
+end  -- ContainerFrameItemButton_Update guard
 
 -- ── Tooltip owner hook for third-party bag addons ────────────────────────
 --
