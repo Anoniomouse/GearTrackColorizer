@@ -162,7 +162,6 @@ local function ApplyTooltipColor(tooltip)
     if line2 and not (line2:GetText() or ""):find(trackName) then
         tooltip:AddLine(string.format("|cff%02x%02x%02xTrack: %s|r",
             color[1] * 255, color[2] * 255, color[3] * 255, trackName))
-        tooltip:Show()  -- resize after AddLine
     end
 end
 
