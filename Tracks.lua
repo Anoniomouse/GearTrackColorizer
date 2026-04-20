@@ -15,6 +15,16 @@ ns.TRACK_DEFAULTS = {
 
 ns.DEFAULT_BORDER_THICKNESS = 3  -- pixels, range 1-6
 
+-- Crafted items expose a quality number (1-5) instead of a track name.
+-- Map each crafting quality tier to the nearest equivalent track color.
+ns.CRAFTED_QUALITY_TRACK = {
+    [1] = "Explorer",
+    [2] = "Adventurer",
+    [3] = "Veteran",
+    [4] = "Champion",
+    [5] = "Hero",
+}
+
 -- Plain-text aliases searched inside tooltip lines.
 -- Use word-boundary patterns (added in Core.lua searches) to avoid
 -- "Hero" matching "Heroic", etc.

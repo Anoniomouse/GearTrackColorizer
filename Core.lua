@@ -56,6 +56,20 @@ local function GetTrackColor(itemLink)
             end
         end
     end
+
+    -- Crafted gear fallback: these items show quality stars (★) in tooltips
+    -- instead of a track name, so the scan above never matches them.
+    -- C_TradeSkillUI.GetItemCraftedQualityByItemInfo returns quality 1-5.
+    if C_TradeSkillUI and C_TradeSkillUI.GetItemCraftedQualityByItemInfo then
+        local ok, quality = pcall(C_TradeSkillUI.GetItemCraftedQualityByItemInfo, itemLink)
+        if ok and quality then
+            local trackName = ns.CRAFTED_QUALITY_TRACK[quality]
+            if trackName and dbColors[trackName] then
+                return dbColors[trackName], trackName
+            end
+        end
+    end
+
     return nil
 end
 
