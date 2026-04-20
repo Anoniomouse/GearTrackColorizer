@@ -1,85 +1,130 @@
 local addonName, ns = ...
 
-local TRACK_COLORS = ns.TRACK_COLORS
 local TRACK_ALIASES = ns.TRACK_ALIASES
-local GEAR_SLOTS = ns.GEAR_SLOTS
-local SLOT_NAMES = ns.SLOT_NAMES
+local GEAR_SLOTS    = ns.GEAR_SLOTS
+local SLOT_NAMES    = ns.SLOT_NAMES
 
-GearTrackColorizerDB = GearTrackColorizerDB or { enabled = true }
+-- ── DB initialisation ──────────────────────────────────────────────────────
 
--- Hidden tooltip used for scanning item data without display side effects
+local function InitDB()
+    GearTrackColorizerDB = GearTrackColorizerDB or {}
+    local db = GearTrackColorizerDB
+    if db.enabled      == nil then db.enabled      = true end
+    if db.bagBorders   == nil then db.bagBorders   = true end
+    if db.borderThickness == nil then
+        db.borderThickness = ns.DEFAULT_BORDER_THICKNESS
+    end
+    -- Seed per-track colors from defaults, preserving any saved customisations
+    db.colors = db.colors or {}
+    for trackName, def in pairs(ns.TRACK_DEFAULTS) do
+        if not db.colors[trackName] then
+            db.colors[trackName] = {def[1], def[2], def[3]}
+        end
+    end
+end
+
+-- ── Hidden scan tooltip ────────────────────────────────────────────────────
+
 local scanTT = CreateFrame("GameTooltip", "GearTrackColorizerScanTT", nil, "GameTooltipTemplate")
 scanTT:SetOwner(WorldFrame, "ANCHOR_NONE")
 
-local function GetTrackColor(itemLink)
-    if not itemLink then return nil end
+-- ── Track detection ────────────────────────────────────────────────────────
 
-    -- Try C_ItemUpgrade API (most reliable when available)
+local function GetTrackColor(itemLink)
+    if not itemLink or not GearTrackColorizerDB then return nil end
+    local dbColors = GearTrackColorizerDB.colors
+
+    -- C_ItemUpgrade API (most reliable)
     if C_ItemUpgrade and C_ItemUpgrade.GetItemUpgradeInfo then
         local ok, info = pcall(C_ItemUpgrade.GetItemUpgradeInfo, itemLink)
-        if ok and info and info.trackName then
-            local color = TRACK_COLORS[info.trackName]
-            if color then return color, info.trackName end
+        if ok and info and info.trackName and dbColors[info.trackName] then
+            return dbColors[info.trackName], info.trackName
         end
     end
 
-    -- Fallback: scan tooltip lines for known track name strings
+    -- Fallback: parse hidden tooltip text for known track names
     scanTT:ClearLines()
-    local ok = pcall(function() scanTT:SetHyperlink(itemLink) end)
-    if not ok then return nil end
+    if not pcall(function() scanTT:SetHyperlink(itemLink) end) then return nil end
 
     for i = 1, scanTT:NumLines() do
-        local leftText = _G["GearTrackColorizerScanTTTextLeft" .. i]
-        local line = leftText and leftText:GetText()
+        local region = _G["GearTrackColorizerScanTTTextLeft" .. i]
+        local line   = region and region:GetText()
         if line then
             for trackName, aliases in pairs(TRACK_ALIASES) do
                 for _, alias in ipairs(aliases) do
-                    if line:find(alias) then
-                        local color = TRACK_COLORS[trackName]
-                        if color then return color, trackName end
+                    if line:find(alias) and dbColors[trackName] then
+                        return dbColors[trackName], trackName
                     end
                 end
             end
         end
     end
-
     return nil
 end
 
--- Apply or clear a colored overlay on a character frame slot button
-local function SetSlotOverlay(slotFrame, r, g, b)
-    if not slotFrame then return end
+ns.GetTrackColor = GetTrackColor
 
-    if not slotFrame.gtcOverlay then
-        local overlay = slotFrame:CreateTexture(nil, "OVERLAY")
-        overlay:SetAllPoints(slotFrame)
-        overlay:SetTexture("Interface\\Buttons\\WHITE8X8")
-        overlay:SetBlendMode("ADD")
-        overlay:SetAlpha(0.25)
-        slotFrame.gtcOverlay = overlay
+-- ── Border rendering (shared by equipped slots and bag buttons) ────────────
+
+local function SetItemBorder(frame, r, g, b)
+    if not frame then return end
+    local t = GearTrackColorizerDB.borderThickness
+
+    if not frame.gtcBorder then
+        local e = {}
+        for _, side in ipairs({"top", "bottom", "left", "right"}) do
+            e[side] = frame:CreateTexture(nil, "OVERLAY")
+            e[side]:SetTexture("Interface\\Buttons\\WHITE8X8")
+        end
+        frame.gtcBorder = e
     end
 
-    if r then
-        slotFrame.gtcOverlay:SetVertexColor(r, g, b)
-        slotFrame.gtcOverlay:Show()
-    else
-        slotFrame.gtcOverlay:Hide()
+    local e = frame.gtcBorder
+
+    e.top:SetHeight(t)
+    e.top:ClearAllPoints()
+    e.top:SetPoint("TOPLEFT",  frame, "TOPLEFT",  0, 0)
+    e.top:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+
+    e.bottom:SetHeight(t)
+    e.bottom:ClearAllPoints()
+    e.bottom:SetPoint("BOTTOMLEFT",  frame, "BOTTOMLEFT",  0, 0)
+    e.bottom:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+
+    e.left:SetWidth(t)
+    e.left:ClearAllPoints()
+    e.left:SetPoint("TOPLEFT",    frame, "TOPLEFT",    0, -t)
+    e.left:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0,  t)
+
+    e.right:SetWidth(t)
+    e.right:ClearAllPoints()
+    e.right:SetPoint("TOPRIGHT",    frame, "TOPRIGHT",    0, -t)
+    e.right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0,  t)
+
+    for _, tex in pairs(e) do
+        if r then
+            tex:SetVertexColor(r, g, b)
+            tex:Show()
+        else
+            tex:Hide()
+        end
     end
 end
 
+ns.SetItemBorder = SetItemBorder
+
+-- ── Equipped gear slots (Character frame) ─────────────────────────────────
+
 local function UpdateAllSlots()
     if not GearTrackColorizerDB.enabled then return end
-
     for _, slotID in ipairs(GEAR_SLOTS) do
-        local slotName = SLOT_NAMES[slotID]
-        local slotFrame = slotName and _G[slotName]
+        local slotFrame = _G[SLOT_NAMES[slotID] or ""]
         if slotFrame then
-            local itemLink = GetInventoryItemLink("player", slotID)
-            local color = GetTrackColor(itemLink)
+            local color = GetTrackColor(GetInventoryItemLink("player", slotID))
             if color then
-                SetSlotOverlay(slotFrame, color[1], color[2], color[3])
+                SetItemBorder(slotFrame, color[1], color[2], color[3])
             else
-                SetSlotOverlay(slotFrame, nil)
+                SetItemBorder(slotFrame, nil)
             end
         end
     end
@@ -87,38 +132,33 @@ end
 
 local function ClearAllSlots()
     for _, slotID in ipairs(GEAR_SLOTS) do
-        local slotName = SLOT_NAMES[slotID]
-        local slotFrame = slotName and _G[slotName]
-        if slotFrame and slotFrame.gtcOverlay then
-            slotFrame.gtcOverlay:Hide()
+        local slotFrame = _G[SLOT_NAMES[slotID] or ""]
+        if slotFrame and slotFrame.gtcBorder then
+            SetItemBorder(slotFrame, nil)
         end
     end
 end
 
--- Tooltip hook: color the item name line by track
+ns.UpdateAllSlots = UpdateAllSlots
+ns.ClearAllSlots  = ClearAllSlots
+
+-- ── Tooltip coloring ───────────────────────────────────────────────────────
+
 local function HookTooltip(tooltip)
     tooltip:HookScript("OnTooltipSetItem", function(self)
         if not GearTrackColorizerDB.enabled then return end
-
         local _, itemLink = self:GetItem()
         if not itemLink then return end
-
         local color, trackName = GetTrackColor(itemLink)
         if not color then return end
 
         local nameLine = _G[self:GetName() .. "TextLeft1"]
-        if nameLine then
-            nameLine:SetTextColor(color[1], color[2], color[3])
-        end
+        if nameLine then nameLine:SetTextColor(color[1], color[2], color[3]) end
 
-        -- Append track badge to second line if not already present
         local line2 = _G[self:GetName() .. "TextLeft2"]
-        if line2 then
-            local existing = line2:GetText() or ""
-            if not existing:find(trackName) then
-                self:AddLine(string.format("|cff%02x%02x%02xTrack: %s|r",
-                    color[1] * 255, color[2] * 255, color[3] * 255, trackName))
-            end
+        if line2 and not (line2:GetText() or ""):find(trackName) then
+            self:AddLine(string.format("|cff%02x%02x%02xTrack: %s|r",
+                color[1] * 255, color[2] * 255, color[3] * 255, trackName))
         end
     end)
 end
@@ -128,50 +168,44 @@ HookTooltip(ItemRefTooltip)
 HookTooltip(ShoppingTooltip1)
 HookTooltip(ShoppingTooltip2)
 
--- Event handling
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
+-- ── Events ─────────────────────────────────────────────────────────────────
 
-frame:SetScript("OnEvent", function(self, event, ...)
-    if event == "PLAYER_LOGIN" then
-        -- Delay slightly so character frame slots exist
-        C_Timer.After(1, function()
-            if CharacterFrame and CharacterFrame:IsShown() then
-                UpdateAllSlots()
-            end
-        end)
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+
+eventFrame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "ADDON_LOADED" and arg1 == addonName then
+        InitDB()
+        self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         C_Timer.After(0.1, UpdateAllSlots)
     end
 end)
 
--- Update slots whenever the character frame opens
-hooksecurefunc("CharacterFrame_OnShow", function()
-    UpdateAllSlots()
-end)
+hooksecurefunc("CharacterFrame_OnShow", function() UpdateAllSlots() end)
 
--- Slash command: /gtc or /geartrack
+-- ── Slash commands ─────────────────────────────────────────────────────────
+
 SLASH_GEARTRACKCOLORIZER1 = "/gtc"
 SLASH_GEARTRACKCOLORIZER2 = "/geartrack"
 SlashCmdList["GEARTRACKCOLORIZER"] = function(msg)
-    msg = msg:lower():trim()
+    msg = strtrim(msg:lower())
     if msg == "on" then
         GearTrackColorizerDB.enabled = true
         UpdateAllSlots()
+        ns.UpdateAllBagButtons()
         print("|cff00ff00GearTrackColorizer:|r Enabled.")
     elseif msg == "off" then
         GearTrackColorizerDB.enabled = false
         ClearAllSlots()
+        ns.ClearAllBagButtons()
         print("|cff00ff00GearTrackColorizer:|r Disabled.")
     elseif msg == "reload" or msg == "refresh" then
         UpdateAllSlots()
-        print("|cff00ff00GearTrackColorizer:|r Slots refreshed.")
+        ns.UpdateAllBagButtons()
+        print("|cff00ff00GearTrackColorizer:|r Refreshed.")
     else
-        print("|cff00ff00GearTrackColorizer|r commands:")
-        print("  /gtc on     - Enable")
-        print("  /gtc off    - Disable")
-        print("  /gtc reload - Refresh slot colors")
+        print("|cff00ff00GearTrackColorizer|r  /gtc on | off | reload")
     end
 end

@@ -1,14 +1,19 @@
 local addonName, ns = ...
 
--- RGB colors per upgrade track
-ns.TRACK_COLORS = {
+-- Display order for UI
+ns.TRACK_ORDER = {"Explorer", "Adventurer", "Veteran", "Champion", "Hero", "Myth"}
+
+-- Default RGB colors per upgrade track
+ns.TRACK_DEFAULTS = {
     ["Explorer"]   = {0.62, 0.62, 0.62},  -- Gray
     ["Adventurer"] = {0.12, 1.00, 0.00},  -- Green
     ["Veteran"]    = {0.00, 0.44, 1.00},  -- Blue
     ["Champion"]   = {0.64, 0.21, 0.93},  -- Purple
-    ["Hero"]       = {1.00, 0.50, 0.00},  -- Orange
+    ["Hero"]       = {1.00, 0.87, 0.00},  -- Yellow
     ["Myth"]       = {0.90, 0.80, 0.50},  -- Artifact gold
 }
+
+ns.DEFAULT_BORDER_THICKNESS = 3
 
 -- Track name aliases that may appear in tooltip text
 ns.TRACK_ALIASES = {
