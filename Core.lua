@@ -143,30 +143,44 @@ ns.UpdateAllSlots = UpdateAllSlots
 ns.ClearAllSlots  = ClearAllSlots
 
 -- ── Tooltip coloring ───────────────────────────────────────────────────────
+--
+-- OnTooltipSetItem was removed in 12.0. Use TooltipDataProcessor which
+-- fires for every tooltip type (GameTooltip, shopping, ItemRef, etc.)
+-- automatically, so no per-tooltip hooking is needed.
 
-local function HookTooltip(tooltip)
-    tooltip:HookScript("OnTooltipSetItem", function(self)
-        if not GearTrackColorizerDB.enabled then return end
-        local _, itemLink = self:GetItem()
-        if not itemLink then return end
-        local color, trackName = GetTrackColor(itemLink)
-        if not color then return end
+local function ApplyTooltipColor(tooltip)
+    if not GearTrackColorizerDB or not GearTrackColorizerDB.enabled then return end
+    local _, itemLink = tooltip:GetItem()
+    if not itemLink then return end
+    local color, trackName = GetTrackColor(itemLink)
+    if not color then return end
 
-        local nameLine = _G[self:GetName() .. "TextLeft1"]
-        if nameLine then nameLine:SetTextColor(color[1], color[2], color[3]) end
+    local nameLine = _G[tooltip:GetName() .. "TextLeft1"]
+    if nameLine then nameLine:SetTextColor(color[1], color[2], color[3]) end
 
-        local line2 = _G[self:GetName() .. "TextLeft2"]
-        if line2 and not (line2:GetText() or ""):find(trackName) then
-            self:AddLine(string.format("|cff%02x%02x%02xTrack: %s|r",
-                color[1] * 255, color[2] * 255, color[3] * 255, trackName))
-        end
-    end)
+    local line2 = _G[tooltip:GetName() .. "TextLeft2"]
+    if line2 and not (line2:GetText() or ""):find(trackName) then
+        tooltip:AddLine(string.format("|cff%02x%02x%02xTrack: %s|r",
+            color[1] * 255, color[2] * 255, color[3] * 255, trackName))
+        tooltip:Show()  -- resize after AddLine
+    end
 end
 
-HookTooltip(GameTooltip)
-HookTooltip(ItemRefTooltip)
-HookTooltip(ShoppingTooltip1)
-HookTooltip(ShoppingTooltip2)
+if TooltipDataProcessor then
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, ApplyTooltipColor)
+else
+    -- Fallback for WoW versions that still have OnTooltipSetItem
+    local function HookTooltip(tt)
+        if tt and tt.HookScript and tt:HasScript("OnTooltipSetItem") then
+            tt:HookScript("OnTooltipSetItem", function(self) ApplyTooltipColor(self) end)
+        end
+    end
+    HookTooltip(GameTooltip)
+    HookTooltip(ItemRefTooltip)
+    for _, tt in ipairs(GameTooltip.shoppingTooltips or {ShoppingTooltip1, ShoppingTooltip2}) do
+        HookTooltip(tt)
+    end
+end
 
 -- ── Events ─────────────────────────────────────────────────────────────────
 

@@ -97,17 +97,17 @@ hooksecurefunc("ContainerFrameItemButton_Update", function(button)
     end
 end)
 
--- ── Hook tooltip owner for third-party bag addons ─────────────────────────
+-- ── Tooltip owner hook for third-party bag addons ────────────────────────
 --
--- When any bag addon shows a tooltip, color the button that owns it.
--- This catches addons whose item buttons we may not have cached.
+-- When any bag addon shows an item tooltip, color the button that owns it.
+-- Uses TooltipDataProcessor (12.0+) with fallback to OnTooltipSetItem.
 
-GameTooltip:HookScript("OnTooltipSetItem", function(self)
+local function ApplyBorderFromTooltipOwner(tooltip)
     if not GearTrackColorizerDB or
        not GearTrackColorizerDB.enabled or
        not GearTrackColorizerDB.bagBorders then return end
 
-    local owner = self:GetOwner()
+    local owner = tooltip:GetOwner()
     if not owner or not owner.IsObjectType or not owner:IsObjectType("Button") then return end
 
     local bag, slot = GetBagSlot(owner)
@@ -116,10 +116,16 @@ GameTooltip:HookScript("OnTooltipSetItem", function(self)
     local info     = C_Container and C_Container.GetContainerItemInfo(bag, slot)
     local itemLink = info and info.hyperlink
     local color    = ns.GetTrackColor(itemLink)
-    if color then
-        ns.SetItemBorder(owner, color[1], color[2], color[3])
-    end
-end)
+    if color then ns.SetItemBorder(owner, color[1], color[2], color[3]) end
+end
+
+if TooltipDataProcessor then
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, ApplyBorderFromTooltipOwner)
+elseif GameTooltip:HasScript("OnTooltipSetItem") then
+    GameTooltip:HookScript("OnTooltipSetItem", function(self)
+        ApplyBorderFromTooltipOwner(self)
+    end)
+end
 
 -- ── Events ────────────────────────────────────────────────────────────────
 
