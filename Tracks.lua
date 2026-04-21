@@ -1,5 +1,7 @@
 local addonName, ns = ...
 
+ns.DISPLAY_NAME = "Gear Track Colorizer"
+
 -- Ordered list for settings UI rows
 -- "Maxed" and "Legendary" are status overrides, not real upgrade tracks.
 ns.TRACK_ORDER = {"Explorer", "Adventurer", "Veteran", "Champion", "Hero", "Myth", "Maxed", "Legendary"}

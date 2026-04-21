@@ -105,7 +105,7 @@ local TRACK_NOTES = {
 -- Splits addonName across the six real track colors (Explorer → Myth).
 -- "GearTrackColorizer" = 18 chars, 6 tracks × 3 chars each — perfect split.
 local function MakeColoredTitle()
-    local name       = addonName  -- "GearTrackColorizer"
+    local name       = ns.DISPLAY_NAME  -- "Gear Track Colorizer"
     local realTracks = {"Explorer", "Adventurer", "Veteran", "Champion", "Hero", "Myth"}
     local stops      = {}
     for _, trackName in ipairs(realTracks) do
@@ -256,8 +256,8 @@ loginFrame:SetScript("OnEvent", function(self)
     self:UnregisterEvent("PLAYER_LOGIN")
     BuildPanel()
 
-    settingsCategory = Settings.RegisterCanvasLayoutCategory(panel, addonName)
-    panel.name = addonName
+    settingsCategory = Settings.RegisterCanvasLayoutCategory(panel, ns.DISPLAY_NAME)
+    panel.name = ns.DISPLAY_NAME
     Settings.RegisterAddOnCategory(settingsCategory)
     -- Patch display name to colored after registration so sort position (set at
     -- registration time) stays alphabetical while the sidebar shows gradient text.
@@ -267,7 +267,7 @@ loginFrame:SetScript("OnEvent", function(self)
 
     if AddonCompartment then
         AddonCompartment.RegisterAddon({
-            text         = addonName,
+            text         = ns.DISPLAY_NAME,
             icon         = "Interface\\Icons\\INV_Misc_Gear_01",
             notCheckable = true,
             func = function()
@@ -276,7 +276,7 @@ loginFrame:SetScript("OnEvent", function(self)
             funcOnEnter = function(_, inputData)
                 local anchor = (inputData and inputData.rootDescription) or UIParent
                 GameTooltip:SetOwner(anchor, "ANCHOR_LEFT")
-                GameTooltip:SetText(addonName, 1, 1, 1)
+                GameTooltip:SetText(ns.DISPLAY_NAME, 1, 1, 1)
                 GameTooltip:AddLine("Click to open settings", 0.8, 0.8, 0.8)
                 GameTooltip:Show()
             end,

@@ -268,7 +268,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         local getMeta = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
         local version = getMeta and getMeta(addonName, "Version") or "?"
         local status  = GearTrackColorizerDB.enabled and "|cff00ff00ON|r" or "|cffff4444OFF|r"
-        print(string.format("|cffffcc00GearTrackColorizer|r v%s  [%s]", version, status))
+        print(string.format("|cffffcc00Gear Track Colorizer|r v%s  [%s]", version, status))
         TryHookCharacterFrame()
         -- Proactively apply borders after a short delay so slot frame globals
         -- are guaranteed to exist (Blizzard_UIPanels_Game may load at startup).
@@ -290,17 +290,17 @@ SlashCmdList["GEARTRACKCOLORIZER"] = function(msg)
         GearTrackColorizerDB.enabled = true
         UpdateAllSlots()
         ns.UpdateAllBagButtons()
-        print("|cff00ff00GearTrackColorizer:|r Enabled.")
+        print("|cff00ff00Gear Track Colorizer:|r Enabled.")
     elseif msg == "off" then
         GearTrackColorizerDB.enabled = false
         ClearAllSlots()
         ns.ClearAllBagButtons()
-        print("|cff00ff00GearTrackColorizer:|r Disabled.")
+        print("|cff00ff00Gear Track Colorizer:|r Disabled.")
     elseif msg == "reload" or msg == "refresh" then
         UpdateAllSlots()
         ns.UpdateAllBagButtons()
-        print("|cff00ff00GearTrackColorizer:|r Refreshed.")
+        print("|cff00ff00Gear Track Colorizer:|r Refreshed.")
     else
-        print("|cff00ff00GearTrackColorizer|r  /gtc on | off | reload")
+        print("|cff00ff00Gear Track Colorizer|r  /gtc on | off | reload")
     end
 end
