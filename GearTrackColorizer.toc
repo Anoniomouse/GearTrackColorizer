@@ -3,7 +3,7 @@
 ## Title: Gear Track Colorizer
 ## Notes: Colors equipped gear and bag item slots by upgrade track (Explorer → Myth)
 ## Author:
-## Version: 1.0.0
+## Version: @project-version@
 ## Category: User Interface
 ## IconTexture: Interface/Icons/INV_Misc_Gear_01
 ## SavedVariables: GearTrackColorizerDB
