@@ -301,6 +301,9 @@ SlashCmdList["GEARTRACKCOLORIZER"] = function(msg)
         ns.UpdateAllBagButtons()
         print("|cff00ff00Gear Track Colorizer:|r Refreshed.")
     else
-        print("|cff00ff00Gear Track Colorizer|r  /gtc on | off | reload")
+        print("|cffffcc00Gear Track Colorizer|r commands:")
+        print("  |cffaaaaaa/gtc on|r      — enable addon")
+        print("  |cffaaaaaa/gtc off|r     — disable addon")
+        print("  |cffaaaaaa/gtc reload|r  — force refresh all borders")
     end
 end
