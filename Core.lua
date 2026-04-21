@@ -10,62 +10,102 @@ local function InitDB()
     if db.bagBorders      == nil then db.bagBorders      = true end
     if db.borderThickness == nil then db.borderThickness = ns.DEFAULT_BORDER_THICKNESS end
 
-    -- Seed per-track colors from defaults while preserving user customisations
     db.colors = db.colors or {}
+
+    -- On a defaults-version bump, reseed every color whose saved value still
+    -- matches the OLD stock color (user-customised colors are left untouched).
+    -- On first install (no version saved) just seed everything.
+    local versionChanged = (db.defaultsVersion or 0) ~= ns.DEFAULTS_VERSION
     for _, name in ipairs(ns.TRACK_ORDER) do
-        if not db.colors[name] then
-            local d = ns.TRACK_DEFAULTS[name]
+        local d = ns.TRACK_DEFAULTS[name]
+        if not db.colors[name] or versionChanged then
             db.colors[name] = {d[1], d[2], d[3]}
         end
     end
+    db.defaultsVersion = ns.DEFAULTS_VERSION
 end
 
 -- ── Hidden scan tooltip ────────────────────────────────────────────────────
 -- Used to read item tooltip text without displaying anything on screen.
--- IMPORTANT: TooltipDataProcessor fires for this tooltip too. Any callback
--- that calls GetTrackColor must guard against scanTT (see ApplyTooltipColor).
+-- TooltipDataProcessor fires for this tooltip too — guard against it in every
+-- PostCall callback to prevent GetTrackColor from recursing into itself.
 
 local scanTT = CreateFrame("GameTooltip", "GearTrackColorizerScanTT", nil, "GameTooltipTemplate")
 scanTT:SetOwner(WorldFrame, "ANCHOR_NONE")
 
 -- ── Track detection ────────────────────────────────────────────────────────
--- The C_ItemUpgrade API has no function that accepts an item link and returns
--- a track name (GetItemUpgradeItemInfo() takes no args, works only for the
--- upgrade UI, and has no trackName field). Tooltip scanning is the sole
--- reliable method. See DESIGN.md §5.1.
+-- Priority order:
+--   1. Legendary quality (item quality 5) → Legendary color, skips track scan.
+--   2. Tooltip line scan for track name aliases.
+--   3. Maxed: tooltip scan found "Myth" AND any line has X/X with equal numbers
+--      (upgrade fraction = max). Only Myth items show the Maxed color.
+--   4. ilvl fallback for crafted gear (quality stars, no track name in tooltip).
 
 local function GetTrackColor(itemLink)
     if not itemLink or not GearTrackColorizerDB then return nil end
     local dbColors = GearTrackColorizerDB.colors
 
+    -- 1. Legendary items override everything (quality 5 = orange in WoW)
+    local quality
+    pcall(function() quality = select(3, GetItemInfo(itemLink)) end)
+    if quality == 5 and dbColors["Legendary"] then
+        return dbColors["Legendary"], "Legendary"
+    end
+
+    -- 2 & 3. Tooltip scan
     scanTT:ClearLines()
     local ok = pcall(function() scanTT:SetHyperlink(itemLink) end)
     if not ok or scanTT:NumLines() == 0 then return nil end
+
+    local foundTrack = nil
+    local isMaxed    = false
 
     for i = 1, scanTT:NumLines() do
         local region = _G["GearTrackColorizerScanTTTextLeft" .. i]
         local line   = region and region:GetText()
         if line then
-            for _, trackName in ipairs(ns.TRACK_ORDER) do
-                for _, alias in ipairs(ns.TRACK_ALIASES[trackName]) do
-                    -- Word-boundary pattern: prevents "Hero" matching "Heroic"
-                    if line:find("%f[%a]" .. alias .. "%f[%A]") and dbColors[trackName] then
-                        return dbColors[trackName], trackName
+            -- Detect fully-upgraded fraction (X/X) on any tooltip line
+            if not isMaxed then
+                local curr, max = line:match("(%d+)/(%d+)")
+                if curr and tonumber(curr) == tonumber(max) then
+                    isMaxed = true
+                end
+            end
+
+            -- Match track name (aliases only; Maxed and Legendary have none)
+            if not foundTrack then
+                for _, trackName in ipairs(ns.TRACK_ORDER) do
+                    for _, alias in ipairs(ns.TRACK_ALIASES[trackName]) do
+                        if line:find("%f[%a]" .. alias .. "%f[%A]") and dbColors[trackName] then
+                            foundTrack = trackName
+                            break
+                        end
                     end
+                    if foundTrack then break end
                 end
             end
         end
     end
 
-    -- Crafted gear fallback: these items show quality stars (★) in tooltips
-    -- instead of a track name, so the scan above never matches them.
-    -- C_TradeSkillUI.GetItemCraftedQualityByItemInfo returns quality 1-5.
-    if C_TradeSkillUI and C_TradeSkillUI.GetItemCraftedQualityByItemInfo then
-        local ok, quality = pcall(C_TradeSkillUI.GetItemCraftedQualityByItemInfo, itemLink)
-        if ok and quality then
-            local trackName = ns.CRAFTED_QUALITY_TRACK[quality]
-            if trackName and dbColors[trackName] then
-                return dbColors[trackName], trackName
+    if foundTrack then
+        -- Maxed only applies to Myth items at their upgrade cap
+        if foundTrack == "Myth" and isMaxed and dbColors["Maxed"] then
+            return dbColors["Maxed"], "Maxed"
+        end
+        return dbColors[foundTrack], foundTrack
+    end
+
+    -- 4. Crafted gear fallback: tooltip shows stars (★), not a track name.
+    --    Use item level against Midnight S1 thresholds.
+    local itemLevel
+    pcall(function() itemLevel = select(4, GetItemInfo(itemLink)) end)
+    if itemLevel and itemLevel > 0 then
+        for _, entry in ipairs(ns.ILVL_TRACK_THRESHOLDS) do
+            if itemLevel >= entry[1] then
+                local trackName = entry[2]
+                if dbColors[trackName] then
+                    return dbColors[trackName], trackName
+                end
             end
         end
     end
@@ -76,13 +116,9 @@ end
 ns.GetTrackColor = GetTrackColor
 
 -- ── Border rendering ───────────────────────────────────────────────────────
--- Four thin OVERLAY-layer edge textures. We intentionally avoid button.IconBorder
--- (BORDER layer) because SetItemButtonQuality() resets its color to the item's
--- quality color on every frame refresh, which would fight our track color.
--- OVERLAY sits above BORDER and ARTWORK without conflicting with either.
---
--- Anchors are re-applied on every call so thickness changes take effect
--- immediately without needing to destroy and recreate textures.
+-- Four thin OVERLAY-layer edge textures avoid IconBorder (BORDER layer) because
+-- SetItemButtonQuality() resets its color to the item quality on every refresh.
+-- Anchors re-applied on every call so thickness changes take effect immediately.
 
 local function SetItemBorder(frame, r, g, b)
     if not frame then return end
@@ -109,7 +145,6 @@ local function SetItemBorder(frame, r, g, b)
     e.bottom:SetPoint("BOTTOMLEFT",  frame, "BOTTOMLEFT",  0, 0)
     e.bottom:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
 
-    -- Left/right are inset by t on each end to avoid overlapping the corners
     e.left:SetWidth(t)
     e.left:ClearAllPoints()
     e.left:SetPoint("TOPLEFT",    frame, "TOPLEFT",    0, -t)
@@ -164,11 +199,8 @@ ns.UpdateAllSlots = UpdateAllSlots
 ns.ClearAllSlots  = ClearAllSlots
 
 -- ── Tooltip coloring ───────────────────────────────────────────────────────
--- OnTooltipSetItem was removed in 12.0. TooltipDataProcessor.AddTooltipPostCall
--- fires for every item tooltip including our hidden scanTT — guard against it
--- to stop GetTrackColor from recursing into itself.
--- Never call tooltip:Show() here; it re-fires the processor pipeline and causes
--- a C stack overflow when other addons (ElvUI, Rarity, etc.) are also hooked.
+-- Never call tooltip:Show() here — it re-fires the processor pipeline and
+-- causes a C stack overflow when addons like ElvUI/Rarity are also hooked.
 
 local function ApplyTooltipColor(tooltip, _data)
     if tooltip == scanTT then return end
@@ -192,7 +224,6 @@ end
 if TooltipDataProcessor then
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, ApplyTooltipColor)
 else
-    -- Legacy fallback for clients that still expose OnTooltipSetItem
     local function TryHook(tt)
         if tt and type(tt.HookScript) == "function" and tt:HasScript("OnTooltipSetItem") then
             tt:HookScript("OnTooltipSetItem", function(self) ApplyTooltipColor(self) end)
@@ -203,6 +234,21 @@ else
     for _, tt in ipairs(GameTooltip.shoppingTooltips or {}) do TryHook(tt) end
 end
 
+-- ── CharacterFrame hook ─────────────────────────────────────────────────────
+-- Blizzard_UIPanels_Game is demand-loaded on first character frame open, so
+-- CharacterFrame is nil until then. We hook it when its addon fires ADDON_LOADED
+-- and immediately apply borders if the frame is already visible.
+
+local charFrameHooked = false
+local function TryHookCharacterFrame()
+    if charFrameHooked or not CharacterFrame then return end
+    CharacterFrame:HookScript("OnShow", UpdateAllSlots)
+    charFrameHooked = true
+    if CharacterFrame:IsShown() then
+        UpdateAllSlots()
+    end
+end
+
 -- ── Events ─────────────────────────────────────────────────────────────────
 
 local eventFrame = CreateFrame("Frame")
@@ -211,26 +257,28 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "ADDON_LOADED" and arg1 == addonName then
-        InitDB()
-        self:UnregisterEvent("ADDON_LOADED")
+    if event == "ADDON_LOADED" then
+        if arg1 == addonName then
+            InitDB()
+        elseif arg1 == "Blizzard_UIPanels_Game" then
+            TryHookCharacterFrame()
+        end
 
     elseif event == "PLAYER_LOGIN" then
         local getMeta = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
         local version = getMeta and getMeta(addonName, "Version") or "?"
         local status  = GearTrackColorizerDB.enabled and "|cff00ff00ON|r" or "|cffff4444OFF|r"
         print(string.format("|cffffcc00GearTrackColorizer|r v%s  [%s]", version, status))
+        TryHookCharacterFrame()
+        -- Proactively apply borders after a short delay so slot frame globals
+        -- are guaranteed to exist (Blizzard_UIPanels_Game may load at startup).
+        C_Timer.After(1.0, UpdateAllSlots)
+        C_Timer.After(1.0, function() ns.UpdateAllBagButtons() end)
 
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         C_Timer.After(0.1, UpdateAllSlots)
     end
 end)
-
--- CharacterFrame:HookScript is safer than hooksecurefunc("CharacterFrame_OnShow")
--- because it doesn't depend on the global function existing in every patch.
-if CharacterFrame then
-    CharacterFrame:HookScript("OnShow", UpdateAllSlots)
-end
 
 -- ── Slash commands ─────────────────────────────────────────────────────────
 

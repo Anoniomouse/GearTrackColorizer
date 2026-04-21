@@ -4,16 +4,14 @@ local addonName, ns = ...
 -- Registered via Settings.RegisterCanvasLayoutCategory (12.0 API).
 -- Opens from: Esc → Interface → AddOns → GearTrackColorizer
 --         and: minimap addon compartment (puzzle-piece button)
---
--- IMPORTANT: panel must have an explicit size and start hidden.
--- Registration happens on PLAYER_LOGIN — both the DB and Settings API are
--- guaranteed ready at that point.
 
 local PANEL_W     = 700
-local PANEL_H     = 560
-local COL_X       = 16
-local ROW_H       = 36
+local PANEL_H     = 640
+local COL_X       = 20
+local ROW_H       = 38
 local SWATCH_SIZE = 24
+local LABEL_X     = COL_X + SWATCH_SIZE + 10   -- 54
+local RESET_X     = COL_X + SWATCH_SIZE + 170  -- 214  (leaves 160 px for label)
 
 local panel = CreateFrame("Frame")
 panel.name  = addonName
@@ -39,13 +37,11 @@ local function MakeCheckbox(parent, labelText, x, y, getter, setter)
 end
 
 -- Coloured square that opens the system colour picker on click.
--- Stores a Refresh() method so Reset buttons can revert the swatch colour.
 local function MakeSwatch(parent, trackName, x, y)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(SWATCH_SIZE, SWATCH_SIZE)
     btn:SetPoint("TOPLEFT", x, y)
 
-    -- Thin black border behind the fill
     local border = btn:CreateTexture(nil, "BACKGROUND")
     border:SetAllPoints()
     border:SetTexture("Interface\\Buttons\\WHITE8X8")
@@ -99,15 +95,57 @@ local function MakeButton(parent, text, w, x, y, onClick)
     return btn
 end
 
+-- ── Track row labels ──────────────────────────────────────────────────────
+
+local TRACK_NOTES = {
+    Maxed      = "|cffaaaaaa— Myth at max upgrade|r",
+    Legendary  = "|cffaaaaaa— quality 5 items|r",
+}
+
+-- Splits addonName across the six real track colors (Explorer → Myth).
+-- "GearTrackColorizer" = 18 chars, 6 tracks × 3 chars each — perfect split.
+local function MakeColoredTitle()
+    local name       = addonName  -- "GearTrackColorizer"
+    local realTracks = {"Explorer", "Adventurer", "Veteran", "Champion", "Hero", "Myth"}
+    local stops      = {}
+    for _, trackName in ipairs(realTracks) do
+        stops[#stops + 1] = ns.TRACK_DEFAULTS[trackName]
+    end
+    local n      = #name
+    local result = ""
+    for i = 1, n do
+        -- Map character position to [0, #stops-1]
+        local t     = (i - 1) / (n - 1) * (#stops - 1)
+        local lo    = math.floor(t) + 1
+        local hi    = math.min(lo + 1, #stops)
+        local frac  = t - (lo - 1)
+        local r = stops[lo][1] + (stops[hi][1] - stops[lo][1]) * frac
+        local g = stops[lo][2] + (stops[hi][2] - stops[lo][2]) * frac
+        local b = stops[lo][3] + (stops[hi][3] - stops[lo][3]) * frac
+        local ch = name:sub(i, i)
+        if i == 1 then
+            -- No color code on 'G' so the string sorts alphabetically.
+            result = result .. ch
+        else
+            local hex = string.format("%02x%02x%02x",
+                math.floor(r * 255 + 0.5),
+                math.floor(g * 255 + 0.5),
+                math.floor(b * 255 + 0.5))
+            result = result .. "|cff" .. hex .. ch .. "|r"
+        end
+    end
+    return result
+end
+
 -- ── Build panel contents ──────────────────────────────────────────────────
 
-local swatches = {}  -- [trackName] = swatch, used by Reset All
+local swatches = {}
 
 local function BuildPanel()
     local curY = -16
 
-    MakeLabel(panel, "GearTrackColorizer", COL_X, curY, "GameFontNormalLarge")
-    curY = curY - 32
+    MakeLabel(panel, MakeColoredTitle(), COL_X, curY, "GameFontNormalLarge")
+    curY = curY - 34
 
     -- Enable toggle
     MakeCheckbox(panel, "Enable addon", COL_X, curY,
@@ -131,40 +169,61 @@ local function BuildPanel()
 
     -- Border thickness slider
     MakeLabel(panel, "Border Thickness", COL_X, curY)
-    curY = curY - 22
+    curY = curY - 24
 
     local slider = CreateFrame("Slider", "GearTrackColorizerThicknessSlider", panel, "OptionsSliderTemplate")
-    slider:SetPoint("TOPLEFT", COL_X + 4, curY)
+    slider:SetPoint("TOPLEFT", COL_X + 8, curY)
     slider:SetWidth(200)
     slider:SetMinMaxValues(1, 6)
     slider:SetValueStep(1)
     slider:SetObeyStepOnDrag(true)
-    slider:SetValue(GearTrackColorizerDB.borderThickness)
     _G[slider:GetName() .. "Low"]:SetText("1")
     _G[slider:GetName() .. "High"]:SetText("6")
-    _G[slider:GetName() .. "Text"]:SetText(GearTrackColorizerDB.borderThickness .. " px")
 
+    local sliderText = _G[slider:GetName() .. "Text"]
+    sliderText:ClearAllPoints()
+    sliderText:SetPoint("TOP", slider, "BOTTOM", 0, -4)
+
+    -- SetScript BEFORE SetValue so OnValueChanged fires during init,
+    -- which calls UpdateAllSlots with the correct saved thickness.
     slider:SetScript("OnValueChanged", function(self, val)
         val = math.floor(val + 0.5)
         GearTrackColorizerDB.borderThickness = val
-        _G[self:GetName() .. "Text"]:SetText(val .. " px")
+        sliderText:SetText(val .. " px")
         ns.UpdateAllSlots()
         ns.UpdateAllBagButtons()
     end)
-    curY = curY - 44
+    slider:SetValue(GearTrackColorizerDB.borderThickness)
+    curY = curY - 50
 
     -- Track color rows
     MakeLabel(panel, "Track Colors", COL_X, curY, "GameFontNormalLarge")
-    curY = curY - 28
+    curY = curY - 30
+
+    -- Column headers
+    MakeLabel(panel, "Color",  COL_X,    curY, "GameFontNormalSmall")
+    MakeLabel(panel, "Track",  LABEL_X,  curY, "GameFontNormalSmall")
+    MakeLabel(panel, "Reset",  RESET_X,  curY, "GameFontNormalSmall")
+    curY = curY - 22
 
     for _, trackName in ipairs(ns.TRACK_ORDER) do
         local def    = ns.TRACK_DEFAULTS[trackName]
         local swatch = MakeSwatch(panel, trackName, COL_X, curY)
         swatches[trackName] = swatch
 
-        MakeLabel(panel, trackName, COL_X + SWATCH_SIZE + 8, curY + 5)
+        -- Track name label
+        MakeLabel(panel, trackName, LABEL_X, curY - 4)
 
-        MakeButton(panel, "Reset", 70, COL_X + SWATCH_SIZE + 90, curY, function()
+        -- Optional note (dimmed, right of the name)
+        local note = TRACK_NOTES[trackName]
+        if note then
+            local noteLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+            noteLabel:SetPoint("LEFT", LABEL_X + 80, curY - 4)  -- offset right of name
+            noteLabel:SetText(note)
+        end
+
+        -- Reset button
+        MakeButton(panel, "Reset", 60, RESET_X, curY + 1, function()
             GearTrackColorizerDB.colors[trackName] = {def[1], def[2], def[3]}
             swatch.Refresh()
             ns.UpdateAllSlots()
@@ -174,9 +233,9 @@ local function BuildPanel()
         curY = curY - ROW_H
     end
 
-    curY = curY - 8
+    curY = curY - 6
 
-    MakeButton(panel, "Reset All Colors", 120, COL_X, curY, function()
+    MakeButton(panel, "Reset All Colors", 130, COL_X, curY, function()
         for _, name in ipairs(ns.TRACK_ORDER) do
             local d = ns.TRACK_DEFAULTS[name]
             GearTrackColorizerDB.colors[name] = {d[1], d[2], d[3]}
@@ -198,9 +257,14 @@ loginFrame:SetScript("OnEvent", function(self)
     BuildPanel()
 
     settingsCategory = Settings.RegisterCanvasLayoutCategory(panel, addonName)
+    panel.name = addonName
     Settings.RegisterAddOnCategory(settingsCategory)
+    -- Patch display name to colored after registration so sort position (set at
+    -- registration time) stays alphabetical while the sidebar shows gradient text.
+    local coloredName = MakeColoredTitle()
+    settingsCategory.name = coloredName
+    panel.name = coloredName
 
-    -- Minimap puzzle-piece compartment button (guarded; may not exist in all patches)
     if AddonCompartment then
         AddonCompartment.RegisterAddon({
             text         = addonName,

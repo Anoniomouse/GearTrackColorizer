@@ -1,85 +1,107 @@
 local addonName, ns = ...
 
--- ── Bag button detection ───────────────────────────────────────────────────
--- Source: Blizzard_ItemButton/Shared/ItemButtonTemplate.lua (12.0.1.66838)
---   ItemButtonMixin:GetBagID() → self.bagID   (bag container index)
---   frame:GetID()              → slot index within that bag
---   GetSlotID() does NOT exist on item buttons.
+-- ── Bag button coloring ────────────────────────────────────────────────────
+-- Two strategies:
 --
--- EnumerateFrames() iterates every frame including unrelated addon frames
--- (damage meters, action bars, etc.) whose GetName() may return a FontString
--- widget instead of a Lua string, causing :match() to error.
--- Every frame method call that feeds into string operations is wrapped with
--- pcall and type-checked before use.
+-- 1. Blizzard bags: container:EnumerateValidItems() — only yields buttons when
+--    the bag frame is actually shown. We guard with IsShown() and hook OnShow
+--    so UpdateAllBagButtons is called the moment a bag opens.
+--
+-- 2. Third-party bag addons (Bagnon, etc.): EnumerateFrames cache + hover hook.
 
-local bagButtonCache = {}  -- [frame] = {bagID, slotID}
-local cacheStale     = true
+local BLIZZARD_CONTAINERS = {
+    "ContainerFrameCombinedBags",
+    "ContainerFrame1", "ContainerFrame2", "ContainerFrame3",
+    "ContainerFrame4", "ContainerFrame5", "ContainerFrame6",
+}
 
--- Returns bagID, slotID from any item button regardless of addon source.
--- All method calls are pcall-wrapped and return-value types are validated
--- so that addon-overridden methods with unexpected return types never error.
+-- ── Equippable gear filter ─────────────────────────────────────────────────
+-- Only typeID 2 (Weapon) and typeID 4 (Armor) are upgrade-track gear.
+-- This excludes bags (typeID 1), consumables (0), reagents (5), trade goods (7),
+-- recipes (9), and anything else that isn't actual wearable equipment.
+
+local function IsUpgradeableGear(itemLink)
+    if not itemLink then return false end
+    local equipLoc, typeID
+    pcall(function()
+        equipLoc = select(9,  GetItemInfo(itemLink))
+        typeID   = select(12, GetItemInfo(itemLink))
+    end)
+    return equipLoc and equipLoc ~= "" and (typeID == 2 or typeID == 4)
+end
+
+-- ── GetBagSlot (third-party addons) ───────────────────────────────────────
+
 local function GetBagSlot(frame)
-    -- Method 1: Blizzard ItemButtonMixin (GetBagID → self.bagID; slot → GetID)
     if frame.GetBagID then
         local okB, bag  = pcall(frame.GetBagID, frame)
         local okS, slot = pcall(frame.GetID,    frame)
         if okB and okS
-            and type(bag)  == "number"
-            and type(slot) == "number"
-            and bag  >= 0
-            and slot >  0
+            and type(bag)  == "number" and type(slot) == "number"
+            and bag >= 0   and slot > 0
         then
             return bag, slot
         end
     end
-
-    -- Method 2: Bagnon-style plain fields (.bag / .slot)
     if type(frame.bag) == "number" and type(frame.slot) == "number"
         and frame.bag >= 0 and frame.slot > 0
     then
         return frame.bag, frame.slot
     end
-
-    -- Method 3: Legacy ContainerFrame naming (ContainerFrame2Item5 → bag 1, slot 5)
-    -- GetName() on some addon frames (e.g. Details! meter rows) returns a
-    -- FontString widget, not a string. type() check is mandatory before :match().
     local nameOk, fname = pcall(frame.GetName, frame)
     if nameOk and type(fname) == "string" then
         local fi, si = fname:match("ContainerFrame(%d+)Item(%d+)")
-        if fi then
-            return tonumber(fi) - 1, tonumber(si)
-        end
+        if fi then return tonumber(fi) - 1, tonumber(si) end
     end
-
     return nil, nil
 end
 
--- ── Frame cache ────────────────────────────────────────────────────────────
--- Built once per bag-open session via EnumerateFrames (expensive but O(1)
--- per BAG_UPDATE afterwards). Marked stale on BAG_OPEN / BAG_CLOSED so that
--- third-party bag addons that create/destroy frames across sessions are handled.
+-- ── Third-party cache ──────────────────────────────────────────────────────
 
-local function RebuildCache()
-    wipe(bagButtonCache)
+local thirdPartyCache = {}
+local cacheStale      = true
 
+local function RebuildThirdPartyCache()
+    wipe(thirdPartyCache)
+    local blizzardFrames = {}
+    for _, name in ipairs(BLIZZARD_CONTAINERS) do
+        local cf = _G[name]
+        if cf then blizzardFrames[cf] = true end
+    end
     local frame = EnumerateFrames()
     while frame do
-        -- IsForbidden() guards restricted frames; wrap in pcall in case the
-        -- frame's metatable makes the call error (seen with some addon proxies)
         local forbidOk, forbidden = pcall(frame.IsForbidden, frame)
-        if forbidOk and not forbidden then
+        if forbidOk and not forbidden and not blizzardFrames[frame] then
             local bag, slot = GetBagSlot(frame)
             if bag and slot then
-                bagButtonCache[frame] = {bag, slot}
+                thirdPartyCache[frame] = {bag, slot}
             end
         end
         frame = EnumerateFrames(frame)
     end
-
     cacheStale = false
 end
 
--- ── Apply / clear borders on cached bag buttons ────────────────────────────
+-- ── Color a single button ──────────────────────────────────────────────────
+
+local function ColorButton(button, bag, slot)
+    local info     = C_Container and C_Container.GetContainerItemInfo(bag, slot)
+    local itemLink = info and info.hyperlink
+
+    if not IsUpgradeableGear(itemLink) then
+        if button.gtcBorder then ns.SetItemBorder(button, nil) end
+        return
+    end
+
+    local color = ns.GetTrackColor(itemLink)
+    if color then
+        ns.SetItemBorder(button, color[1], color[2], color[3])
+    elseif button.gtcBorder then
+        ns.SetItemBorder(button, nil)
+    end
+end
+
+-- ── UpdateAllBagButtons ────────────────────────────────────────────────────
 
 local function UpdateAllBagButtons()
     if not GearTrackColorizerDB
@@ -87,25 +109,39 @@ local function UpdateAllBagButtons()
         or not GearTrackColorizerDB.bagBorders
     then return end
 
-    if cacheStale then RebuildCache() end
+    -- Strategy 1: Blizzard containers.
+    -- EnumerateValidItems only has active buttons while the frame is shown.
+    for _, name in ipairs(BLIZZARD_CONTAINERS) do
+        local cf = _G[name]
+        if cf and cf.IsShown and cf:IsShown() and cf.EnumerateValidItems then
+            for _, button in cf:EnumerateValidItems() do
+                if button then
+                    ColorButton(button, button:GetBagID(), button:GetID())
+                end
+            end
+        end
+    end
 
-    for frame, bagSlot in pairs(bagButtonCache) do
+    -- Strategy 2: Third-party addon frames
+    if cacheStale then RebuildThirdPartyCache() end
+    for frame, bagSlot in pairs(thirdPartyCache) do
         local visOk, visible = pcall(frame.IsVisible, frame)
         if visOk and visible then
-            local info     = C_Container and C_Container.GetContainerItemInfo(bagSlot[1], bagSlot[2])
-            local itemLink = info and info.hyperlink
-            local color    = ns.GetTrackColor(itemLink)
-            if color then
-                ns.SetItemBorder(frame, color[1], color[2], color[3])
-            elseif frame.gtcBorder then
-                ns.SetItemBorder(frame, nil)
-            end
+            ColorButton(frame, bagSlot[1], bagSlot[2])
         end
     end
 end
 
 local function ClearAllBagButtons()
-    for frame in pairs(bagButtonCache) do
+    for _, name in ipairs(BLIZZARD_CONTAINERS) do
+        local cf = _G[name]
+        if cf and cf.IsShown and cf:IsShown() and cf.EnumerateValidItems then
+            for _, button in cf:EnumerateValidItems() do
+                if button and button.gtcBorder then ns.SetItemBorder(button, nil) end
+            end
+        end
+    end
+    for frame in pairs(thirdPartyCache) do
         if frame.gtcBorder then ns.SetItemBorder(frame, nil) end
     end
 end
@@ -113,35 +149,7 @@ end
 ns.UpdateAllBagButtons = UpdateAllBagButtons
 ns.ClearAllBagButtons  = ClearAllBagButtons
 
--- ── Blizzard ContainerFrameItemButton_Update hook (pre-12.0 only) ──────────
--- Removed in 12.0; guard prevents error on current clients.
-
-if ContainerFrameItemButton_Update then
-    hooksecurefunc("ContainerFrameItemButton_Update", function(button)
-        if not GearTrackColorizerDB
-            or not GearTrackColorizerDB.enabled
-            or not GearTrackColorizerDB.bagBorders
-        then return end
-
-        local bag, slot = GetBagSlot(button)
-        if not bag then return end
-
-        local info     = C_Container and C_Container.GetContainerItemInfo(bag, slot)
-        local itemLink = info and info.hyperlink
-        local color    = ns.GetTrackColor(itemLink)
-        if color then
-            ns.SetItemBorder(button, color[1], color[2], color[3])
-        elseif button.gtcBorder then
-            ns.SetItemBorder(button, nil)
-        end
-    end)
-end
-
--- ── Tooltip-owner hook (third-party bag addons) ────────────────────────────
--- Colours the button that owns the tooltip on hover, catching addons whose
--- frames are not in the cache. Registered separately from Core.lua's
--- ApplyTooltipColor — two PostCall registrations for the same type are allowed.
--- scanTT guard prevents the same recursion risk as Core.lua.
+-- ── Tooltip-owner hook ─────────────────────────────────────────────────────
 
 local function ApplyBorderFromTooltipOwner(tooltip, _data)
     if tooltip == _G["GearTrackColorizerScanTT"] then return end
@@ -153,21 +161,23 @@ local function ApplyBorderFromTooltipOwner(tooltip, _data)
     local owner = tooltip:GetOwner()
     if not owner then return end
 
-    -- Confirm owner is a Button (not a frame/fontstring/texture)
     local typeOk, objType = pcall(owner.GetObjectType, owner)
     if not typeOk or objType ~= "Button" then return end
 
     local bag, slot = GetBagSlot(owner)
     if not bag then return end
 
-    local info     = C_Container and C_Container.GetContainerItemInfo(bag, slot)
-    local itemLink = info and info.hyperlink
-    local color    = ns.GetTrackColor(itemLink)
-    if color then
-        ns.SetItemBorder(owner, color[1], color[2], color[3])
-        -- Also cache this frame for future BAG_UPDATE passes
-        bagButtonCache[owner] = {bag, slot}
+    ColorButton(owner, bag, slot)
+
+    -- First discovery of this frame: rebuild the full cache so every visible
+    -- button in the same addon window also gets colored without needing a hover.
+    -- (ArkInventory and similar addons only render frames when their window is
+    -- open, so EnumerateFrames finds them only after the user interacts once.)
+    if not thirdPartyCache[owner] then
+        cacheStale = true
+        C_Timer.After(0, UpdateAllBagButtons)
     end
+    thirdPartyCache[owner] = {bag, slot}
 end
 
 if TooltipDataProcessor then
@@ -181,26 +191,46 @@ end
 -- ── Events ────────────────────────────────────────────────────────────────
 
 local bagFrame = CreateFrame("Frame")
-bagFrame:RegisterEvent("BAG_UPDATE")
+bagFrame:RegisterEvent("ADDON_LOADED")
+bagFrame:RegisterEvent("BAG_UPDATE_DELAYED")
 bagFrame:RegisterEvent("BAG_OPEN")
 bagFrame:RegisterEvent("BAG_CLOSED")
+bagFrame:RegisterEvent("BAG_UPDATE")
 
 local updatePending = false
 local function ScheduleUpdate()
     if updatePending then return end
     updatePending = true
-    C_Timer.After(0.2, function()
+    C_Timer.After(0.1, function()
         updatePending = false
         UpdateAllBagButtons()
     end)
 end
 
-bagFrame:SetScript("OnEvent", function(self, event)
-    if event == "BAG_OPEN" then
+-- Hook each Blizzard container frame's OnShow so UpdateAllBagButtons fires
+-- the moment a bag opens (EnumerateValidItems is ready at that point).
+local function HookContainerOnShow(cf)
+    if cf and cf.HookScript then
+        cf:HookScript("OnShow", function() UpdateAllBagButtons() end)
+    end
+end
+
+bagFrame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "ADDON_LOADED" and arg1 == "Blizzard_UIPanels_Game" then
+        for _, name in ipairs(BLIZZARD_CONTAINERS) do
+            HookContainerOnShow(_G[name])
+        end
+
+    elseif event == "BAG_OPEN" then
         cacheStale = true
         ScheduleUpdate()
+
     elseif event == "BAG_CLOSED" then
         cacheStale = true
+
+    elseif event == "BAG_UPDATE_DELAYED" then
+        ScheduleUpdate()
+
     elseif event == "BAG_UPDATE" then
         ScheduleUpdate()
     end

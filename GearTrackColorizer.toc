@@ -4,6 +4,7 @@
 ## Notes: Colors equipped gear and bag item slots by upgrade track (Explorer → Myth)
 ## Author:
 ## Version: 1.0.0
+## Category: User Interface
 ## SavedVariables: GearTrackColorizerDB
 
 Tracks.lua
