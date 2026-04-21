@@ -27,7 +27,7 @@ A World of Warcraft addon (Midnight / Interface 120001) that colors your equippe
 
 ## Settings
 
-Open via **Esc → Interface → AddOns → Gear Track Colorizer** or the minimap puzzle-piece button.
+Open via **Esc → Interface → AddOns → Gear Track Colorizer**.
 
 - **Enable addon** — toggle all coloring on/off
 - **Color borders in bags** — toggle bag item borders independently
