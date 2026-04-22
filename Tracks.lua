@@ -14,7 +14,7 @@ ns.TRACK_DEFAULTS = {
     Champion   = {0.64, 0.21, 0.93},  -- Purple
     Hero       = {1.00, 0.87, 0.00},  -- Yellow
     Myth       = {1.00, 0.10, 0.10},  -- Red
-    Maxed      = {1.00, 1.00, 1.00},  -- White  (Myth at max upgrade — nothing left to do)
+    Maxed      = {1.00, 1.00, 1.00},  -- White  (Myth/Voidforged at max — nothing left to do)
     Legendary  = {1.00, 0.50, 0.00},  -- Orange (#FF8000)
 }
 

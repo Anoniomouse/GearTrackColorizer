@@ -57,19 +57,27 @@ local function GetTrackColor(itemLink)
     local ok = pcall(function() scanTT:SetHyperlink(itemLink) end)
     if not ok or scanTT:NumLines() == 0 then return nil end
 
-    local foundTrack = nil
-    local isMaxed    = false
+    local foundTrack   = nil
+    local isMaxed      = false
+    local isVoidforged = false
 
     for i = 1, scanTT:NumLines() do
         local region = _G["GearTrackColorizerScanTTTextLeft" .. i]
         local line   = region and region:GetText()
         if line then
-            -- Detect fully-upgraded fraction (X/X) on any tooltip line
+            -- Detect fully-upgraded fraction (X/X) on any tooltip line.
+            -- Require max >= 5 to skip set-bonus "2/2" and other small fractions.
             if not isMaxed then
                 local curr, max = line:match("(%d+)/(%d+)")
-                if curr and tonumber(curr) == tonumber(max) then
+                if curr and tonumber(curr) == tonumber(max) and tonumber(max) >= 5 then
                     isMaxed = true
                 end
+            end
+
+            -- Voidforged items show "Ascendant Voidforged: Myth/Hero" — detect
+            -- before the regular track scan so "Myth" on the same line doesn't win.
+            if not isVoidforged and line:find("%f[%a]Voidforged%f[%A]") then
+                isVoidforged = true
             end
 
             -- Match track name (aliases only; Maxed and Legendary have none)
@@ -88,8 +96,9 @@ local function GetTrackColor(itemLink)
     end
 
     if foundTrack then
-        -- Maxed only applies to Myth items at their upgrade cap
-        if foundTrack == "Myth" and isMaxed and dbColors["Maxed"] then
+        -- Voidforged Myth = fully done, show as Maxed.
+        -- Voidforged Hero = still Hero track color (not at the top of the ladder).
+        if foundTrack == "Myth" and (isMaxed or isVoidforged) and dbColors["Maxed"] then
             return dbColors["Maxed"], "Maxed"
         end
         return dbColors[foundTrack], foundTrack
@@ -270,10 +279,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         local status  = GearTrackColorizerDB.enabled and "|cff00ff00ON|r" or "|cffff4444OFF|r"
         print(string.format("|cffffcc00Gear Track Colorizer|r v%s  [%s]", version, status))
         TryHookCharacterFrame()
-        -- Proactively apply borders after a short delay so slot frame globals
-        -- are guaranteed to exist (Blizzard_UIPanels_Game may load at startup).
-        C_Timer.After(1.0, UpdateAllSlots)
-        C_Timer.After(1.0, function() ns.UpdateAllBagButtons() end)
+        -- Apply borders after item cache warms up. Two passes: one early for
+        -- fast logins, one later as a safety net for slow or cold caches.
+        C_Timer.After(2.0, UpdateAllSlots)
+        C_Timer.After(2.0, function() ns.UpdateAllBagButtons() end)
+        C_Timer.After(5.0, UpdateAllSlots)
+        C_Timer.After(5.0, function() ns.UpdateAllBagButtons() end)
 
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         C_Timer.After(0.1, UpdateAllSlots)
