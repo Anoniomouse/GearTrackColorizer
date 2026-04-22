@@ -1,6 +1,6 @@
 # Gear Track Colorizer
 
-A World of Warcraft addon (Midnight / Interface 120001) that colors your equipped gear slots and bag item slots based on their upgrade track, so you can see at a glance what tier each piece is at.
+A World of Warcraft addon (Midnight) that colors your equipped gear slots and bag item slots based on their upgrade track, so you can see at a glance what tier each piece is at.
 
 ## Features
 
