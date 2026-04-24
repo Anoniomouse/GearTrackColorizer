@@ -58,6 +58,9 @@ end
 
 -- ── Third-party cache ──────────────────────────────────────────────────────
 
+-- Cache is a set of known frames only. Bag/slot is always re-read live from
+-- the frame at update time so stale slot assignments after item moves don't
+-- leave borders on empty or reassigned slots.
 local thirdPartyCache = {}
 local cacheStale      = true
 
@@ -74,7 +77,7 @@ local function RebuildThirdPartyCache()
         if forbidOk and not forbidden and not blizzardFrames[frame] then
             local bag, slot = GetBagSlot(frame)
             if bag and slot then
-                thirdPartyCache[frame] = {bag, slot}
+                thirdPartyCache[frame] = true
             end
         end
         frame = EnumerateFrames(frame)
@@ -122,12 +125,19 @@ local function UpdateAllBagButtons()
         end
     end
 
-    -- Strategy 2: Third-party addon frames
+    -- Strategy 2: Third-party addon frames.
+    -- Re-read bag/slot from the frame each time — the addon may have reassigned
+    -- the frame to a different slot since the cache was built.
     if cacheStale then RebuildThirdPartyCache() end
-    for frame, bagSlot in pairs(thirdPartyCache) do
+    for frame in pairs(thirdPartyCache) do
         local visOk, visible = pcall(frame.IsVisible, frame)
         if visOk and visible then
-            ColorButton(frame, bagSlot[1], bagSlot[2])
+            local bag, slot = GetBagSlot(frame)
+            if bag and slot then
+                ColorButton(frame, bag, slot)
+            elseif frame.gtcBorder then
+                ns.SetItemBorder(frame, nil)
+            end
         end
     end
 end
@@ -177,7 +187,7 @@ local function ApplyBorderFromTooltipOwner(tooltip, _data)
         cacheStale = true
         C_Timer.After(0, UpdateAllBagButtons)
     end
-    thirdPartyCache[owner] = {bag, slot}
+    thirdPartyCache[owner] = true
 end
 
 if TooltipDataProcessor then
@@ -229,6 +239,7 @@ bagFrame:SetScript("OnEvent", function(self, event, arg1)
         cacheStale = true
 
     elseif event == "BAG_UPDATE_DELAYED" then
+        cacheStale = true
         ScheduleUpdate()
 
     elseif event == "BAG_UPDATE" then
