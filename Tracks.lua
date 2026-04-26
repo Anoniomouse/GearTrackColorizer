@@ -53,6 +53,26 @@ ns.ILVL_TRACK_THRESHOLDS = {
 -- Inventory slot IDs with upgrade tracks (excludes shirt 4, tabard 19)
 ns.GEAR_SLOTS = {1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}
 
+-- Inspect frame slot button names keyed by slot ID
+ns.INSPECT_SLOT_NAMES = {
+    [1]  = "InspectHeadSlot",
+    [2]  = "InspectNeckSlot",
+    [3]  = "InspectShoulderSlot",
+    [5]  = "InspectChestSlot",
+    [6]  = "InspectWaistSlot",
+    [7]  = "InspectLegsSlot",
+    [8]  = "InspectFeetSlot",
+    [9]  = "InspectWristSlot",
+    [10] = "InspectHandsSlot",
+    [11] = "InspectFinger0Slot",
+    [12] = "InspectFinger1Slot",
+    [13] = "InspectTrinket0Slot",
+    [14] = "InspectTrinket1Slot",
+    [15] = "InspectBackSlot",
+    [16] = "InspectMainHandSlot",
+    [17] = "InspectSecondaryHandSlot",
+}
+
 -- Character frame slot button names keyed by slot ID
 ns.SLOT_NAMES = {
     [1]  = "CharacterHeadSlot",

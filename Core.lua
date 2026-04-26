@@ -243,6 +243,46 @@ else
     for _, tt in ipairs(GameTooltip.shoppingTooltips or {}) do TryHook(tt) end
 end
 
+-- ── Inspect frame slots ────────────────────────────────────────────────────
+
+local function UpdateInspectSlots()
+    if not GearTrackColorizerDB or not GearTrackColorizerDB.enabled then return end
+    if not InspectFrame or not InspectFrame:IsShown() then return end
+    local unit = InspectFrame.unit
+    if not unit or not UnitExists(unit) then return end
+    for _, slotID in ipairs(ns.GEAR_SLOTS) do
+        local frame = _G[ns.INSPECT_SLOT_NAMES[slotID] or ""]
+        if frame then
+            local color = GetTrackColor(GetInventoryItemLink(unit, slotID))
+            if color then
+                SetItemBorder(frame, color[1], color[2], color[3])
+            else
+                SetItemBorder(frame, nil)
+            end
+        end
+    end
+end
+
+local function ClearInspectSlots()
+    for _, slotID in ipairs(ns.GEAR_SLOTS) do
+        local frame = _G[ns.INSPECT_SLOT_NAMES[slotID] or ""]
+        if frame and frame.gtcBorder then
+            SetItemBorder(frame, nil)
+        end
+    end
+end
+
+local inspectFrameHooked = false
+local function TryHookInspectFrame()
+    if inspectFrameHooked or not InspectFrame then return end
+    InspectFrame:HookScript("OnShow", UpdateInspectSlots)
+    InspectFrame:HookScript("OnHide", ClearInspectSlots)
+    inspectFrameHooked = true
+    if InspectFrame:IsShown() then
+        UpdateInspectSlots()
+    end
+end
+
 -- ── CharacterFrame hook ─────────────────────────────────────────────────────
 -- Blizzard_UIPanels_Game is demand-loaded on first character frame open, so
 -- CharacterFrame is nil until then. We hook it when its addon fires ADDON_LOADED
@@ -264,6 +304,7 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+eventFrame:RegisterEvent("INSPECT_READY")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
@@ -271,6 +312,8 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             InitDB()
         elseif arg1 == "Blizzard_UIPanels_Game" then
             TryHookCharacterFrame()
+        elseif arg1 == "Blizzard_InspectUI" then
+            TryHookInspectFrame()
         end
 
     elseif event == "PLAYER_LOGIN" then
@@ -288,6 +331,11 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
 
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         C_Timer.After(0.1, UpdateAllSlots)
+
+    elseif event == "INSPECT_READY" then
+        if InspectFrame and InspectFrame.unit and UnitGUID(InspectFrame.unit) == arg1 then
+            UpdateInspectSlots()
+        end
     end
 end)
 
