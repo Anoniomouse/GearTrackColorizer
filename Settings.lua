@@ -167,6 +167,16 @@ local function BuildPanel()
         end)
     curY = curY - ROW_H
 
+    -- Inspect frame toggle
+    MakeCheckbox(panel, "Color borders in inspect frame", COL_X, curY,
+        function() return GearTrackColorizerDB.inspectBorders end,
+        function(v)
+            GearTrackColorizerDB.inspectBorders = v
+            if v then ns.UpdateInspectSlots()
+            else       ns.ClearInspectSlots() end
+        end)
+    curY = curY - ROW_H
+
     -- Border thickness slider
     MakeLabel(panel, "Border Thickness", COL_X, curY)
     curY = curY - 24

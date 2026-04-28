@@ -9,6 +9,7 @@ local function InitDB()
     if db.enabled         == nil then db.enabled         = true end
     if db.bagBorders      == nil then db.bagBorders      = true end
     if db.borderThickness == nil then db.borderThickness = ns.DEFAULT_BORDER_THICKNESS end
+    if db.inspectBorders  == nil then db.inspectBorders  = true end
 
     db.colors = db.colors or {}
 
@@ -247,6 +248,7 @@ end
 
 local function UpdateInspectSlots()
     if not GearTrackColorizerDB or not GearTrackColorizerDB.enabled then return end
+    if not GearTrackColorizerDB.inspectBorders then return end
     if not InspectFrame or not InspectFrame:IsShown() then return end
     local unit = InspectFrame.unit
     if not unit or not UnitExists(unit) then return end
@@ -271,6 +273,9 @@ local function ClearInspectSlots()
         end
     end
 end
+
+ns.UpdateInspectSlots = UpdateInspectSlots
+ns.ClearInspectSlots  = ClearInspectSlots
 
 local inspectFrameHooked = false
 local function TryHookInspectFrame()
