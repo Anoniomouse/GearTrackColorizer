@@ -325,7 +325,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         local getMeta = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
         local version = getMeta and getMeta(addonName, "Version") or "?"
         local status  = GearTrackColorizerDB.enabled and "|cff00ff00ON|r" or "|cffff4444OFF|r"
-        print(string.format("|cffffcc00Gear Track Colorizer|r v%s  [%s]", version, status))
+        print(string.format("|cffffcc00Gear Track Colorizer|r %s  [%s]", version, status))
         TryHookCharacterFrame()
         -- Apply borders after item cache warms up. Two passes: one early for
         -- fast logins, one later as a safety net for slow or cold caches.
