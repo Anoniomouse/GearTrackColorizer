@@ -225,7 +225,11 @@ local function ApplyTooltipColor(tooltip, _data)
 
     local ttName = tooltip:GetName()
     local line2 = ttName and _G[ttName .. "TextLeft2"]
-    if line2 and not (line2:GetText() or ""):find(trackName, 1, true) then
+    local hasTrack = false
+    if line2 then
+        pcall(function() hasTrack = (line2:GetText() or ""):find(trackName, 1, true) ~= nil end)
+    end
+    if not hasTrack then
         tooltip:AddLine(string.format("|cff%02x%02x%02xTrack: %s|r",
             color[1] * 255, color[2] * 255, color[3] * 255, trackName))
     end
