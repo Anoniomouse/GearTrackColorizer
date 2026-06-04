@@ -98,7 +98,7 @@ local function ColorButton(button, bag, slot)
 
     local color = ns.GetTrackColor(itemLink)
     if color then
-        ns.SetItemBorder(button, color[1], color[2], color[3])
+        ns.SetItemBorder(button, color[1], color[2], color[3], color[4])
     elseif button.gtcBorder then
         ns.SetItemBorder(button, nil)
     end

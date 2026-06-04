@@ -12,6 +12,10 @@ local function InitDB()
     if db.inspectBorders  == nil then db.inspectBorders  = true end
 
     db.colors = db.colors or {}
+    db.trackEnabled = db.trackEnabled or {}
+    for _, name in ipairs(ns.TRACK_ORDER) do
+        if db.trackEnabled[name] == nil then db.trackEnabled[name] = true end
+    end
 
     -- On a defaults-version bump, reseed every color whose saved value still
     -- matches the OLD stock color (user-customised colors are left untouched).
@@ -46,10 +50,13 @@ local function GetTrackColor(itemLink)
     if not itemLink or not GearTrackColorizerDB then return nil end
     local dbColors = GearTrackColorizerDB.colors
 
+    local te = GearTrackColorizerDB.trackEnabled
+
     -- 1. Legendary items override everything (quality 5 = orange in WoW)
     local quality
     pcall(function() quality = select(3, GetItemInfo(itemLink)) end)
     if quality == 5 and dbColors["Legendary"] then
+        if te and te["Legendary"] == false then return nil end
         return dbColors["Legendary"], "Legendary"
     end
 
@@ -100,8 +107,10 @@ local function GetTrackColor(itemLink)
         -- Voidforged Myth = fully done, show as Maxed.
         -- Voidforged Hero = still Hero track color (not at the top of the ladder).
         if foundTrack == "Myth" and (isMaxed or isVoidforged) and dbColors["Maxed"] then
+            if te and te["Maxed"] == false then return nil end
             return dbColors["Maxed"], "Maxed"
         end
+        if te and te[foundTrack] == false then return nil end
         return dbColors[foundTrack], foundTrack
     end
 
@@ -114,6 +123,7 @@ local function GetTrackColor(itemLink)
             if itemLevel >= entry[1] then
                 local trackName = entry[2]
                 if dbColors[trackName] then
+                    if te and te[trackName] == false then return nil end
                     return dbColors[trackName], trackName
                 end
             end
@@ -130,7 +140,7 @@ ns.GetTrackColor = GetTrackColor
 -- SetItemButtonQuality() resets its color to the item quality on every refresh.
 -- Anchors re-applied on every call so thickness changes take effect immediately.
 
-local function SetItemBorder(frame, r, g, b)
+local function SetItemBorder(frame, r, g, b, a)
     if not frame then return end
     local t = GearTrackColorizerDB.borderThickness
 
@@ -167,7 +177,7 @@ local function SetItemBorder(frame, r, g, b)
 
     if r then
         for _, tex in pairs(e) do
-            tex:SetVertexColor(r, g, b)
+            tex:SetVertexColor(r, g, b, a or 1.0)
             tex:Show()
         end
     else
@@ -188,7 +198,7 @@ local function UpdateAllSlots()
         if frame then
             local color = GetTrackColor(GetInventoryItemLink("player", slotID))
             if color then
-                SetItemBorder(frame, color[1], color[2], color[3])
+                SetItemBorder(frame, color[1], color[2], color[3], color[4])
             else
                 SetItemBorder(frame, nil)
             end
@@ -230,8 +240,12 @@ local function ApplyTooltipColor(tooltip, _data)
         pcall(function() hasTrack = (line2:GetText() or ""):find(trackName, 1, true) ~= nil end)
     end
     if not hasTrack then
-        tooltip:AddLine(string.format("|cff%02x%02x%02xTrack: %s|r",
-            color[1] * 255, color[2] * 255, color[3] * 255, trackName))
+        tooltip:AddLine(string.format("|c%02x%02x%02x%02xTrack: %s|r",
+            math.floor((color[4] or 1.0) * 255 + 0.5),
+            math.floor(color[1] * 255 + 0.5),
+            math.floor(color[2] * 255 + 0.5),
+            math.floor(color[3] * 255 + 0.5),
+            trackName))
     end
 end
 
