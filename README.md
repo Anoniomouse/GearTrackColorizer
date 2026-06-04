@@ -27,7 +27,7 @@ A World of Warcraft addon (Midnight) that colors your equipped gear slots and ba
 
 ## Settings
 
-Open via **Esc → Interface → AddOns → Gear Track Colorizer**.
+Open via **Esc → Actions → AddOns → Gear Track Colorizer**.
 
 - **Enable addon** — toggle all coloring on/off
 - **Color borders in bags** — toggle bag item borders independently
