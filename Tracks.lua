@@ -43,10 +43,10 @@ ns.TRACK_ALIASES = {
 -- Uses the minimum ilvl where each track begins — checked highest-first.
 -- Midnight S1 confirmed ranges: Adventurer 220-237, Veteran 233-250,
 -- Champion 246-263, Hero 259-276, Myth 272-289.
--- Sporefall Sporefused drops (pre-maxed, no upgrade counter):
---   LFR 259→Hero, Normal 272→Myth, Heroic 285→Myth, Mythic 298→Myth.
+-- Sporefall Sporefused drops (no upgrade counter in tooltip):
+--   LFR 259→Hero, Normal 272→Myth, Heroic 285→Myth.
+--   Mythic 298: tooltip contains "Sporefused"+"Myth" → detected in Core.lua as Maxed.
 ns.ILVL_TRACK_THRESHOLDS = {
-    {289, "Maxed"},  -- Myth cap (289 = Myth 6/6) and Sporefused Mythic 298
     {272, "Myth"},
     {259, "Hero"},
     {246, "Champion"},

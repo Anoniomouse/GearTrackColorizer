@@ -68,6 +68,7 @@ local function GetTrackColor(itemLink)
     local foundTrack   = nil
     local isMaxed      = false
     local isVoidforged = false
+    local isSporefused = false
 
     for i = 1, scanTT:NumLines() do
         local region = _G["GearTrackColorizerScanTTTextLeft" .. i]
@@ -82,10 +83,13 @@ local function GetTrackColor(itemLink)
                 end
             end
 
-            -- Voidforged items show "Ascendant Voidforged: Myth/Hero" — detect
-            -- before the regular track scan so "Myth" on the same line doesn't win.
+            -- Voidforged/Sporefused items show these keywords before a track name
+            -- on the same tooltip line — detect first so "Myth" doesn't win alone.
             if not isVoidforged and line:find("%f[%a]Voidforged%f[%A]") then
                 isVoidforged = true
+            end
+            if not isSporefused and line:find("%f[%a]Sporefused%f[%A]") then
+                isSporefused = true
             end
 
             -- Match track name (aliases only; Maxed and Legendary have none)
@@ -104,9 +108,9 @@ local function GetTrackColor(itemLink)
     end
 
     if foundTrack then
-        -- Voidforged Myth = fully done, show as Maxed.
-        -- Voidforged Hero = still Hero track color (not at the top of the ladder).
-        if foundTrack == "Myth" and (isMaxed or isVoidforged) and dbColors["Maxed"] then
+        -- Voidforged/Sporefused Myth = fully done, show as Maxed.
+        -- Voidforged/Sporefused Hero = still Hero track color.
+        if foundTrack == "Myth" and (isMaxed or isVoidforged or isSporefused) and dbColors["Maxed"] then
             if te and te["Maxed"] == false then return nil end
             return dbColors["Maxed"], "Maxed"
         end
