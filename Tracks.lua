@@ -39,14 +39,18 @@ ns.TRACK_ALIASES = {
     Legendary  = {},
 }
 
--- Item level thresholds for crafted gear (shows quality stars, not track names).
--- Midnight Season 1 values — checked highest-first.
+-- Item level thresholds for crafted / Sporefused gear (no track name in tooltip).
+-- Uses the minimum ilvl where each track begins — checked highest-first.
+-- Midnight S1 confirmed ranges: Adventurer 220-237, Veteran 233-250,
+-- Champion 246-263, Hero 259-276, Myth 272-289.
+-- Sporefall Sporefused drops (pre-maxed, no upgrade counter):
+--   LFR 259→Hero, Normal 272→Myth, Heroic 285→Myth, Mythic 298→Myth.
 ns.ILVL_TRACK_THRESHOLDS = {
-    {276, "Myth"},
-    {263, "Hero"},
-    {250, "Champion"},
-    {237, "Veteran"},
-    {224, "Adventurer"},
+    {272, "Myth"},
+    {259, "Hero"},
+    {246, "Champion"},
+    {233, "Veteran"},
+    {220, "Adventurer"},
     {0,   "Explorer"},
 }
 
