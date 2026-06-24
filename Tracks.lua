@@ -46,6 +46,7 @@ ns.TRACK_ALIASES = {
 -- Sporefall Sporefused drops (pre-maxed, no upgrade counter):
 --   LFR 259→Hero, Normal 272→Myth, Heroic 285→Myth, Mythic 298→Myth.
 ns.ILVL_TRACK_THRESHOLDS = {
+    {289, "Maxed"},  -- Myth cap (289 = Myth 6/6) and Sporefused Mythic 298
     {272, "Myth"},
     {259, "Hero"},
     {246, "Champion"},
