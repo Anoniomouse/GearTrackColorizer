@@ -27,7 +27,11 @@ local function IsUpgradeableGear(itemLink)
         equipLoc = select(9,  GetItemInfo(itemLink))
         typeID   = select(12, GetItemInfo(itemLink))
     end)
-    return equipLoc and equipLoc ~= "" and (typeID == 2 or typeID == 4)
+    -- typeID 2 = Weapon, 4 = Armor for normal gear.
+    -- Profession tools/accessories (Alchemy Accessory, Engineering Tool, etc.)
+    -- use profession-specific equip locations rather than a weapon/armor typeID.
+    local isProfession = equipLoc and equipLoc:find("PROFESSION") ~= nil
+    return equipLoc and equipLoc ~= "" and (typeID == 2 or typeID == 4 or isProfession)
 end
 
 -- ── GetBagSlot (third-party addons) ───────────────────────────────────────

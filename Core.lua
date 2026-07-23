@@ -118,19 +118,13 @@ local function GetTrackColor(itemLink)
         return dbColors[foundTrack], foundTrack
     end
 
-    -- 4. Crafted gear fallback: tooltip shows stars (★), not a track name.
-    --    Use item level against Midnight S1 thresholds.
-    local itemLevel
-    pcall(function() itemLevel = select(4, GetItemInfo(itemLink)) end)
-    if itemLevel and itemLevel > 0 then
-        for _, entry in ipairs(ns.ILVL_TRACK_THRESHOLDS) do
-            if itemLevel >= entry[1] then
-                local trackName = entry[2]
-                if dbColors[trackName] then
-                    if te and te[trackName] == false then return nil end
-                    return dbColors[trackName], trackName
-                end
-            end
+    -- 4. Crafted gear fallback: tooltip shows quality stars (★), not a track name.
+    --    Use the item quality color — the same color as the item name in the tooltip.
+    if quality and quality >= 2 then
+        local qr, qg, qb
+        pcall(function() qr, qg, qb = GetItemQualityColor(quality) end)
+        if qr then
+            return {qr, qg, qb}, "Crafted"
         end
     end
 
