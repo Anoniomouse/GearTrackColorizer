@@ -118,9 +118,12 @@ local function GetTrackColor(itemLink)
         return dbColors[foundTrack], foundTrack
     end
 
-    -- 4. Crafted gear fallback: tooltip shows quality stars (★), not a track name.
-    --    Use the item quality color — the same color as the item name in the tooltip.
-    if quality and quality >= 2 then
+    -- 4. Profession gear (Alchemy Accessory, Engineering Tool, etc.) has no upgrade
+    --    track. Detect by equip location and color using the item quality color,
+    --    which matches the item name color in the tooltip.
+    local equipLoc
+    pcall(function() equipLoc = select(9, GetItemInfo(itemLink)) end)
+    if equipLoc and equipLoc:find("PROFESSION") and quality and quality >= 2 then
         local qr, qg, qb
         pcall(function() qr, qg, qb = GetItemQualityColor(quality) end)
         if qr then
