@@ -153,9 +153,11 @@ end
 ns.GetTrackColor = GetTrackColor
 
 -- ── Border rendering ───────────────────────────────────────────────────────
--- Four thin OVERLAY-layer edge textures avoid IconBorder (BORDER layer) because
--- SetItemButtonQuality() resets its color to the item quality on every refresh.
--- Anchors re-applied on every call so thickness changes take effect immediately.
+-- Four thin OVERLAY-layer edge textures (sublevel 7) avoid IconBorder (BORDER layer)
+-- because SetItemButtonQuality() resets its color to the item quality on every refresh.
+-- Sublevel 7 ensures our textures render above third-party addon borders (e.g.
+-- EllesmereUI uses sublevel 2). Anchors re-applied on every call so thickness changes
+-- take effect immediately.
 
 local function SetItemBorder(frame, r, g, b, a)
     if not frame then return end
@@ -163,8 +165,15 @@ local function SetItemBorder(frame, r, g, b, a)
 
     if not frame.gtcBorder then
         frame.gtcBorder = {}
+        -- Child frame at level +100 renders above EllesmereUI's character-sheet
+        -- overlay panels (which sit at CharacterFrame level +50) and above
+        -- EllesmereUI's inspect borders (OVERLAY sublevel 7 on the slot frame).
+        local bf = CreateFrame("Frame", nil, frame)
+        bf:SetAllPoints()
+        bf:SetFrameLevel(frame:GetFrameLevel() + 100)
+        frame.gtcBorderFrame = bf
         for _, side in ipairs({"top", "bottom", "left", "right"}) do
-            local tex = frame:CreateTexture(nil, "OVERLAY")
+            local tex = bf:CreateTexture(nil, "OVERLAY", nil, 7)
             tex:SetTexture("Interface\\Buttons\\WHITE8X8")
             frame.gtcBorder[side] = tex
         end
@@ -197,10 +206,13 @@ local function SetItemBorder(frame, r, g, b, a)
             tex:SetVertexColor(r, g, b, a or 1.0)
             tex:Show()
         end
+        -- Suppress third-party borders (e.g. EllesmereUI) that share IconBorder.
+        if frame.IconBorder then frame.IconBorder:Hide() end
     else
         for _, tex in pairs(e) do
             tex:Hide()
         end
+        if frame.IconBorder then frame.IconBorder:Show() end
     end
 end
 
