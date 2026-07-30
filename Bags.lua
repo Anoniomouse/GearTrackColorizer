@@ -57,23 +57,6 @@ local function GetBagSlot(frame)
         local fi, si = fname:match("ContainerFrame(%d+)Item(%d+)")
         if fi then return tonumber(fi) - 1, tonumber(si) end
     end
-    -- EllesmereUI (and similar): bag stored on parent via SetID, slot on button.
-    -- Validate with GetContainerNumSlots to avoid false positives from other frames.
-    local parentOk, parent = pcall(frame.GetParent, frame)
-    if parentOk and parent then
-        local bagOk,  bag  = pcall(parent.GetID, parent)
-        local slotOk, slot = pcall(frame.GetID,  frame)
-        if bagOk and slotOk
-            and type(bag) == "number" and type(slot) == "number"
-            and bag >= 0 and slot > 0
-        then
-            local numSlots
-            pcall(function() numSlots = C_Container and C_Container.GetContainerNumSlots(bag) end)
-            if numSlots and numSlots >= slot then
-                return bag, slot
-            end
-        end
-    end
     return nil, nil
 end
 
