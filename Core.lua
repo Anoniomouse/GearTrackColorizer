@@ -131,6 +131,22 @@ local function GetTrackColor(itemLink)
         end
     end
 
+    -- 5. Crafted gear fallback: tooltip shows stars (★), not a track name.
+    --    Use item level against current season thresholds.
+    local itemLevel
+    pcall(function() itemLevel = select(4, GetItemInfo(itemLink)) end)
+    if itemLevel and itemLevel > 0 then
+        for _, entry in ipairs(ns.ILVL_TRACK_THRESHOLDS) do
+            if itemLevel >= entry[1] then
+                local trackName = entry[2]
+                if dbColors[trackName] then
+                    if te and te[trackName] == false then return nil end
+                    return dbColors[trackName], trackName
+                end
+            end
+        end
+    end
+
     return nil
 end
 
