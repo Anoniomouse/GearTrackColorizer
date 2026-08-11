@@ -1,5 +1,5 @@
-## Interface: 120007
-## Interface-Retail: 120007
+## Interface: 120100
+## Interface-Retail: 120100
 ## Title: Gear Track Colorizer
 ## Notes: Colors equipped gear and bag item slots by upgrade track (Explorer → Myth)
 ## Author:

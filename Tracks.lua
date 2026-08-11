@@ -39,19 +39,18 @@ ns.TRACK_ALIASES = {
     Legendary  = {},
 }
 
--- Item level thresholds for crafted / Sporefused gear (no track name in tooltip).
+-- Item level thresholds for crafted gear (shows stars, no track name in tooltip).
 -- Uses the minimum ilvl where each track begins — checked highest-first.
--- Midnight S1 confirmed ranges: Adventurer 220-237, Veteran 233-250,
--- Champion 246-263, Hero 259-276, Myth 272-289.
--- Sporefall Sporefused drops (no upgrade counter in tooltip):
---   LFR 259→Hero, Normal 272→Myth, Heroic 285→Myth.
---   Mythic 298: tooltip contains "Sporefused"+"Myth" → detected in Core.lua as Maxed.
+-- Midnight S2 confirmed ranges: Adventurer 266-282, Veteran 279-295,
+-- Champion 292-308, Hero 305-321, Myth 318-334.
+-- Sporefused / Voidforged gear carries track keywords in the tooltip directly,
+-- so it never reaches this fallback.
 ns.ILVL_TRACK_THRESHOLDS = {
-    {272, "Myth"},
-    {259, "Hero"},
-    {246, "Champion"},
-    {233, "Veteran"},
-    {220, "Adventurer"},
+    {318, "Myth"},
+    {305, "Hero"},
+    {292, "Champion"},
+    {279, "Veteran"},
+    {266, "Adventurer"},
     {0,   "Explorer"},
 }
 
