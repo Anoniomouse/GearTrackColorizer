@@ -43,7 +43,7 @@ ns.TRACK_ALIASES = {
 -- Uses the minimum ilvl where each track begins — checked highest-first.
 -- Midnight S2 confirmed ranges: Adventurer 266-282, Veteran 279-295,
 -- Champion 292-308, Hero 305-321, Myth 318-334.
--- Sporefused / Voidforged gear carries track keywords in the tooltip directly,
+-- Voidforged gear carries track keywords in the tooltip directly,
 -- so it never reaches this fallback.
 ns.ILVL_TRACK_THRESHOLDS = {
     {318, "Myth"},

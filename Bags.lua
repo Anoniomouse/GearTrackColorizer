@@ -1,13 +1,9 @@
 local addonName, ns = ...
 
 -- ── Bag button coloring ────────────────────────────────────────────────────
--- Two strategies:
---
--- 1. Blizzard bags: container:EnumerateValidItems() — only yields buttons when
---    the bag frame is actually shown. We guard with IsShown() and hook OnShow
---    so UpdateAllBagButtons is called the moment a bag opens.
---
--- 2. Third-party bag addons (Bagnon, etc.): EnumerateFrames cache + hover hook.
+-- Borders are applied lazily on hover (one item at a time, no bulk scan).
+-- On bag updates only existing borders are checked and cleared if the item
+-- in that slot changed — no tooltip scanning on update events.
 
 local BLIZZARD_CONTAINERS = {
     "ContainerFrameCombinedBags",
@@ -16,9 +12,6 @@ local BLIZZARD_CONTAINERS = {
 }
 
 -- ── Equippable gear filter ─────────────────────────────────────────────────
--- Only typeID 2 (Weapon) and typeID 4 (Armor) are upgrade-track gear.
--- This excludes bags (typeID 1), consumables (0), reagents (5), trade goods (7),
--- recipes (9), and anything else that isn't actual wearable equipment.
 
 local function IsUpgradeableGear(itemLink)
     if not itemLink then return false end
@@ -27,9 +20,6 @@ local function IsUpgradeableGear(itemLink)
         equipLoc = select(9,  GetItemInfo(itemLink))
         typeID   = select(12, GetItemInfo(itemLink))
     end)
-    -- typeID 2 = Weapon, 4 = Armor for normal gear.
-    -- Profession tools/accessories (Alchemy Accessory, Engineering Tool, etc.)
-    -- use profession-specific equip locations rather than a weapon/armor typeID.
     local isProfession = equipLoc and equipLoc:find("PROFESSION") ~= nil
     return equipLoc and equipLoc ~= "" and (typeID == 2 or typeID == 4 or isProfession)
 end
@@ -60,40 +50,17 @@ local function GetBagSlot(frame)
     return nil, nil
 end
 
--- ── Third-party cache ──────────────────────────────────────────────────────
-
--- Cache is a set of known frames only. Bag/slot is always re-read live from
--- the frame at update time so stale slot assignments after item moves don't
--- leave borders on empty or reassigned slots.
+-- ── Known third-party frames (discovered lazily on hover) ─────────────────
 local thirdPartyCache = {}
-local cacheStale      = true
-
-local function RebuildThirdPartyCache()
-    wipe(thirdPartyCache)
-    local blizzardFrames = {}
-    for _, name in ipairs(BLIZZARD_CONTAINERS) do
-        local cf = _G[name]
-        if cf then blizzardFrames[cf] = true end
-    end
-    local frame = EnumerateFrames()
-    while frame do
-        local forbidOk, forbidden = pcall(frame.IsForbidden, frame)
-        if forbidOk and not forbidden and not blizzardFrames[frame] then
-            local bag, slot = GetBagSlot(frame)
-            if bag and slot then
-                thirdPartyCache[frame] = true
-            end
-        end
-        frame = EnumerateFrames(frame)
-    end
-    cacheStale = false
-end
 
 -- ── Color a single button ──────────────────────────────────────────────────
 
 local function ColorButton(button, bag, slot)
     local info     = C_Container and C_Container.GetContainerItemInfo(bag, slot)
     local itemLink = info and info.hyperlink
+
+    -- Track the item link we last classified so the clear pass can detect changes.
+    button.gtcClassifiedLink = itemLink
 
     if not IsUpgradeableGear(itemLink) then
         if button.gtcBorder then ns.SetItemBorder(button, nil) end
@@ -108,7 +75,52 @@ local function ColorButton(button, bag, slot)
     end
 end
 
--- ── UpdateAllBagButtons ────────────────────────────────────────────────────
+-- ── ClearChangedButtons ────────────────────────────────────────────────────
+-- Fast pass (no tooltip scan) that removes borders from buttons whose slot
+-- item has changed since the border was last applied.
+
+local function ClearChangedButtons()
+    if not GearTrackColorizerDB
+        or not GearTrackColorizerDB.enabled
+        or not GearTrackColorizerDB.bagBorders
+    then return end
+
+    for _, name in ipairs(BLIZZARD_CONTAINERS) do
+        local cf = _G[name]
+        if cf and cf.IsShown and cf:IsShown() and cf.EnumerateValidItems then
+            for _, button in cf:EnumerateValidItems() do
+                if button and button.gtcBorder then
+                    local info = C_Container and C_Container.GetContainerItemInfo(
+                        button:GetBagID(), button:GetID())
+                    local link = info and info.hyperlink
+                    if link ~= button.gtcClassifiedLink then
+                        ns.SetItemBorder(button, nil)
+                        button.gtcClassifiedLink = link
+                    end
+                end
+            end
+        end
+    end
+
+    for frame in pairs(thirdPartyCache) do
+        if frame.gtcBorder then
+            local bag, slot = GetBagSlot(frame)
+            if bag and slot then
+                local info = C_Container and C_Container.GetContainerItemInfo(bag, slot)
+                local link = info and info.hyperlink
+                if link ~= frame.gtcClassifiedLink then
+                    ns.SetItemBorder(frame, nil)
+                    frame.gtcClassifiedLink = link
+                end
+            end
+        end
+    end
+end
+
+-- ── UpdateAllBagButtons / ClearAllBagButtons (called from Settings.lua) ───
+-- UpdateAll re-colors already-bordered frames with current DB colors and scans
+-- newly hovered frames; used when the user changes colors or toggles borders.
+-- ClearAll removes every border (used when bag borders are disabled).
 
 local function UpdateAllBagButtons()
     if not GearTrackColorizerDB
@@ -116,32 +128,22 @@ local function UpdateAllBagButtons()
         or not GearTrackColorizerDB.bagBorders
     then return end
 
-    -- Strategy 1: Blizzard containers.
-    -- EnumerateValidItems only has active buttons while the frame is shown.
     for _, name in ipairs(BLIZZARD_CONTAINERS) do
         local cf = _G[name]
         if cf and cf.IsShown and cf:IsShown() and cf.EnumerateValidItems then
             for _, button in cf:EnumerateValidItems() do
-                if button then
+                if button and button.gtcBorder then
                     ColorButton(button, button:GetBagID(), button:GetID())
                 end
             end
         end
     end
 
-    -- Strategy 2: Third-party addon frames.
-    -- Re-read bag/slot from the frame each time — the addon may have reassigned
-    -- the frame to a different slot since the cache was built.
-    if cacheStale then RebuildThirdPartyCache() end
     for frame in pairs(thirdPartyCache) do
         local visOk, visible = pcall(frame.IsVisible, frame)
-        if visOk and visible then
+        if visOk and visible and frame.gtcBorder then
             local bag, slot = GetBagSlot(frame)
-            if bag and slot then
-                ColorButton(frame, bag, slot)
-            elseif frame.gtcBorder then
-                ns.SetItemBorder(frame, nil)
-            end
+            if bag and slot then ColorButton(frame, bag, slot) end
         end
     end
 end
@@ -164,6 +166,8 @@ ns.UpdateAllBagButtons = UpdateAllBagButtons
 ns.ClearAllBagButtons  = ClearAllBagButtons
 
 -- ── Tooltip-owner hook ─────────────────────────────────────────────────────
+-- Fires on every item tooltip. Colors just the hovered button — no bulk scan,
+-- no EnumerateFrames. Registers the frame for future clear passes.
 
 local function ApplyBorderFromTooltipOwner(tooltip, _data)
     if tooltip == _G["GearTrackColorizerScanTT"] then return end
@@ -175,23 +179,11 @@ local function ApplyBorderFromTooltipOwner(tooltip, _data)
     local owner = tooltip:GetOwner()
     if not owner then return end
 
-    local typeOk, objType = pcall(owner.GetObjectType, owner)
-    if not typeOk or objType ~= "Button" then return end
-
     local bag, slot = GetBagSlot(owner)
     if not bag then return end
 
-    ColorButton(owner, bag, slot)
-
-    -- First discovery of this frame: rebuild the full cache so every visible
-    -- button in the same addon window also gets colored without needing a hover.
-    -- (ArkInventory and similar addons only render frames when their window is
-    -- open, so EnumerateFrames finds them only after the user interacts once.)
-    if not thirdPartyCache[owner] then
-        cacheStale = true
-        C_Timer.After(0, UpdateAllBagButtons)
-    end
     thirdPartyCache[owner] = true
+    ColorButton(owner, bag, slot)
 end
 
 if TooltipDataProcessor then
@@ -207,46 +199,27 @@ end
 local bagFrame = CreateFrame("Frame")
 bagFrame:RegisterEvent("ADDON_LOADED")
 bagFrame:RegisterEvent("BAG_UPDATE_DELAYED")
-bagFrame:RegisterEvent("BAG_OPEN")
 bagFrame:RegisterEvent("BAG_CLOSED")
-bagFrame:RegisterEvent("BAG_UPDATE")
 
-local updatePending = false
-local function ScheduleUpdate()
-    if updatePending then return end
-    updatePending = true
+local clearPending = false
+local function ScheduleClear()
+    if clearPending then return end
+    clearPending = true
     C_Timer.After(0.1, function()
-        updatePending = false
-        UpdateAllBagButtons()
+        clearPending = false
+        ClearChangedButtons()
     end)
-end
-
--- Hook each Blizzard container frame's OnShow so UpdateAllBagButtons fires
--- the moment a bag opens (EnumerateValidItems is ready at that point).
-local function HookContainerOnShow(cf)
-    if cf and cf.HookScript then
-        cf:HookScript("OnShow", function() UpdateAllBagButtons() end)
-    end
 end
 
 bagFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == "Blizzard_UIPanels_Game" then
-        for _, name in ipairs(BLIZZARD_CONTAINERS) do
-            HookContainerOnShow(_G[name])
-        end
-
-    elseif event == "BAG_OPEN" then
-        cacheStale = true
-        ScheduleUpdate()
+        -- nothing needed; hover hook handles coloring
 
     elseif event == "BAG_CLOSED" then
-        cacheStale = true
+        -- Frames may be recycled; wipe lazy cache so stale entries don't linger.
+        wipe(thirdPartyCache)
 
     elseif event == "BAG_UPDATE_DELAYED" then
-        cacheStale = true
-        ScheduleUpdate()
-
-    elseif event == "BAG_UPDATE" then
-        ScheduleUpdate()
+        ScheduleClear()
     end
 end)

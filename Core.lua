@@ -40,113 +40,129 @@ scanTT:SetOwner(WorldFrame, "ANCHOR_NONE")
 
 -- ── Track detection ────────────────────────────────────────────────────────
 -- Priority order:
---   1. Legendary quality (item quality 5) → Legendary color, skips track scan.
---   2. Tooltip line scan for track name aliases.
---   3. Maxed: tooltip scan found "Myth" AND any line has X/X with equal numbers
---      (upgrade fraction = max). Only Myth items show the Maxed color.
---   4. ilvl fallback for crafted gear (quality stars, no track name in tooltip).
+--   1. Legendary quality (item quality 5) → Legendary color.
+--   2. Profession gear (PROFESSION equip location) → item quality color.
+--   3. ilvl vs current season thresholds → track color.
+--      Myth-ilvl items additionally check tooltip for X/X fraction → Maxed.
+-- Classifying by ilvl (not tooltip track name) ensures S1 gear gets its
+-- correct S2-relative color rather than its old S1 track color.
+--
+-- ClassifyItem does the expensive work (GetItemInfo + tooltip scan) and caches
+-- the result by itemLink. Track classification is immutable for a given link.
+-- GetTrackColor is called on every update and reads colors fresh from DB so
+-- user color/toggle changes take effect immediately without clearing the cache.
 
-local function GetTrackColor(itemLink)
-    if not itemLink or not GearTrackColorizerDB then return nil end
-    local dbColors = GearTrackColorizerDB.colors
+local scanCache = {}  -- [itemLink] = key string, or false for "no color"
 
-    local te = GearTrackColorizerDB.trackEnabled
-
-    -- 1. Legendary items override everything (quality 5 = orange in WoW)
-    local quality
-    pcall(function() quality = select(3, GetItemInfo(itemLink)) end)
-    if quality == 5 and dbColors["Legendary"] then
-        if te and te["Legendary"] == false then return nil end
-        return dbColors["Legendary"], "Legendary"
+-- Collect tooltip lines for itemLink without touching any visible frame.
+-- C_TooltipInfo.GetHyperlink (Dragonflight+) returns data directly from the
+-- item cache as a plain Lua table — no frame update, no layout cost.
+-- Falls back to the hidden scan tooltip for safety.
+local function GetTooltipLines(itemLink)
+    if C_TooltipInfo and C_TooltipInfo.GetHyperlink then
+        local tipData = C_TooltipInfo.GetHyperlink(itemLink)
+        if tipData and tipData.lines and #tipData.lines > 0 then
+            local out = {}
+            for _, ld in ipairs(tipData.lines) do
+                if ld.leftText  then out[#out + 1] = ld.leftText  end
+                if ld.rightText then out[#out + 1] = ld.rightText end
+            end
+            return out
+        end
+        -- C_TooltipInfo returned nothing — fall through to the scan tooltip which
+        -- can force-load tooltip data that C_TooltipInfo can't reach yet.
     end
-
-    -- 2 & 3. Tooltip scan
+    -- Hidden GameTooltip frame: slower but triggers a full tooltip data load.
     scanTT:ClearLines()
     local ok = pcall(function() scanTT:SetHyperlink(itemLink) end)
     if not ok or scanTT:NumLines() == 0 then return nil end
-
-    local foundTrack   = nil
-    local isMaxed      = false
-    local isVoidforged = false
-    local isSporefused = false
-
+    local out = {}
     for i = 1, scanTT:NumLines() do
-        local region = _G["GearTrackColorizerScanTTTextLeft" .. i]
-        local line   = region and region:GetText()
-        if line then
-            -- Detect fully-upgraded fraction (X/X) on any tooltip line.
-            -- Require max >= 5 to skip set-bonus "2/2" and other small fractions.
-            if not isMaxed then
-                local curr, max = line:match("(%d+)/(%d+)")
-                if curr and tonumber(curr) == tonumber(max) and tonumber(max) >= 5 then
-                    isMaxed = true
-                end
-            end
+        local r = _G["GearTrackColorizerScanTTTextLeft" .. i]
+        local t = r and r:GetText()
+        if t then out[#out + 1] = t end
+    end
+    return #out > 0 and out or nil
+end
 
-            -- Voidforged/Sporefused items show these keywords before a track name
-            -- on the same tooltip line — detect first so "Myth" doesn't win alone.
-            if not isVoidforged and line:find("%f[%a]Voidforged%f[%A]") then
-                isVoidforged = true
-            end
-            if not isSporefused and line:find("%f[%a]Sporefused%f[%A]") then
-                isSporefused = true
-            end
+local function ClassifyItem(itemLink)
+    local cached = scanCache[itemLink]
+    if cached ~= nil then return cached end
 
-            -- Match track name (aliases only; Maxed and Legendary have none)
-            if not foundTrack then
-                for _, trackName in ipairs(ns.TRACK_ORDER) do
-                    for _, alias in ipairs(ns.TRACK_ALIASES[trackName]) do
-                        if line:find("%f[%a]" .. alias .. "%f[%A]") and dbColors[trackName] then
-                            foundTrack = trackName
-                            break
-                        end
-                    end
-                    if foundTrack then break end
-                end
-            end
-        end
+    local quality, itemLevel, equipLoc
+    pcall(function()
+        local t = {GetItemInfo(itemLink)}
+        quality   = t[3]
+        itemLevel = t[4]
+        equipLoc  = t[9]
+    end)
+    if quality == nil then return nil end  -- data not loaded; retry later
+
+    -- 1. Legendary
+    if quality == 5 then
+        scanCache[itemLink] = "Legendary"
+        return "Legendary"
     end
 
-    if foundTrack then
-        -- Voidforged/Sporefused Myth = fully done, show as Maxed.
-        -- Voidforged/Sporefused Hero = still Hero track color.
-        if foundTrack == "Myth" and (isMaxed or isVoidforged or isSporefused) and dbColors["Maxed"] then
-            if te and te["Maxed"] == false then return nil end
-            return dbColors["Maxed"], "Maxed"
-        end
-        if te and te[foundTrack] == false then return nil end
-        return dbColors[foundTrack], foundTrack
+    -- 2. Profession gear (PROFESSION equip location, no upgrade track).
+    if equipLoc and equipLoc:find("PROFESSION") and quality >= 2 then
+        local key = "Q" .. tostring(quality)
+        scanCache[itemLink] = key
+        return key
     end
 
-    -- 4. Profession gear (Alchemy Accessory, Engineering Tool, etc.) has no upgrade
-    --    track. Detect by equip location and color using the item quality color,
-    --    which matches the item name color in the tooltip.
-    local equipLoc
-    pcall(function() equipLoc = select(9, GetItemInfo(itemLink)) end)
-    if equipLoc and equipLoc:find("PROFESSION") and quality and quality >= 2 then
-        local qr, qg, qb
-        pcall(function() qr, qg, qb = GetItemQualityColor(quality) end)
-        if qr then
-            return {qr, qg, qb}, "Crafted"
-        end
-    end
-
-    -- 5. Crafted gear fallback: tooltip shows stars (★), not a track name.
-    --    Use item level against current season thresholds.
-    local itemLevel
-    pcall(function() itemLevel = select(4, GetItemInfo(itemLink)) end)
+    -- 3. Classify by ilvl against current season thresholds.
+    --    Using ilvl means S1 gear gets its correct S2-relative color instead of
+    --    being over-colored by the old tooltip track name.
     if itemLevel and itemLevel > 0 then
         for _, entry in ipairs(ns.ILVL_TRACK_THRESHOLDS) do
             if itemLevel >= entry[1] then
                 local trackName = entry[2]
-                if dbColors[trackName] then
-                    if te and te[trackName] == false then return nil end
-                    return dbColors[trackName], trackName
+                -- Myth-ilvl items: check for fully-upgraded X/X fraction.
+                if trackName == "Myth" then
+                    local lines = GetTooltipLines(itemLink)
+                    if lines then
+                        for _, line in ipairs(lines) do
+                            local curr, max = line:match("(%d+)/(%d+)")
+                            if curr and tonumber(curr) == tonumber(max)
+                                and tonumber(max) >= 5
+                            then
+                                scanCache[itemLink] = "Maxed"
+                                return "Maxed"
+                            end
+                        end
+                    end
                 end
+                scanCache[itemLink] = trackName
+                return trackName
             end
         end
     end
 
+    scanCache[itemLink] = false
+    return false
+end
+
+local function GetTrackColor(itemLink)
+    if not itemLink or not GearTrackColorizerDB then return nil end
+    local dbColors = GearTrackColorizerDB.colors
+    local te       = GearTrackColorizerDB.trackEnabled
+
+    local key = ClassifyItem(itemLink)
+    if not key then return nil end
+
+    -- Profession gear encoded as "Q<quality>" → derive color from quality each call.
+    if key:sub(1, 1) == "Q" then
+        local qual = tonumber(key:sub(2))
+        local qr, qg, qb
+        pcall(function() qr, qg, qb = GetItemQualityColor(qual) end)
+        if qr then return {qr, qg, qb}, "Crafted" end
+        return nil
+    end
+
+    -- All other keys are track names (Explorer … Maxed, Legendary).
+    if te and te[key] == false then return nil end
+    if dbColors[key] then return dbColors[key], key end
     return nil
 end
 
