@@ -374,11 +374,6 @@ loginFrame:SetScript("OnEvent", function(self)
     settingsCategory = Settings.RegisterCanvasLayoutCategory(panel, ns.DISPLAY_NAME)
     panel.name = ns.DISPLAY_NAME
     Settings.RegisterAddOnCategory(settingsCategory)
-    -- Patch display name to colored after registration so sort position (set at
-    -- registration time) stays alphabetical while the sidebar shows gradient text.
-    local coloredName = MakeColoredTitle()
-    settingsCategory.name = coloredName
-    panel.name = coloredName
 
     if AddonCompartment then
         AddonCompartment.RegisterAddon({
