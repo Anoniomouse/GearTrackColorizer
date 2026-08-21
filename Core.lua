@@ -42,10 +42,10 @@ scanTT:SetOwner(WorldFrame, "ANCHOR_NONE")
 -- Priority order:
 --   1. Legendary quality (item quality 5) → Legendary color.
 --   2. Profession gear (PROFESSION equip location) → item quality color.
---   3. ilvl vs current season thresholds → track color.
---      Myth-ilvl items additionally check tooltip for X/X fraction → Maxed.
--- Classifying by ilvl (not tooltip track name) ensures S1 gear gets its
--- correct S2-relative color rather than its old S1 track color.
+--   3. Tooltip track name, validated against current season ilvl minimum.
+--      If ilvl is too low for the named track (old-season gear), falls through.
+--      Myth at X/X → Maxed.
+--   4. ilvl fallback for crafted gear and old-season gear.
 --
 -- ClassifyItem does the expensive work (GetItemInfo + tooltip scan) and caches
 -- the result by itemLink. Track classification is immutable for a given link.
@@ -111,30 +111,58 @@ local function ClassifyItem(itemLink)
         return key
     end
 
-    -- 3. Classify by ilvl against current season thresholds.
-    --    Using ilvl means S1 gear gets its correct S2-relative color instead of
-    --    being over-colored by the old tooltip track name.
+    -- 3. Use tooltip track name, validated against the current season ilvl minimum.
+    --    If tooltip says "Myth" but ilvl < S2 Myth minimum, the item is old-season
+    --    gear — fall through to ilvl classification instead.
+    --    This handles both overlapping ilvl ranges (Hero tops at 321, Myth starts
+    --    at 318) and S1 gear still carrying its old track name in the tooltip.
+    local thresholdByName = {}
+    for _, entry in ipairs(ns.ILVL_TRACK_THRESHOLDS) do
+        thresholdByName[entry[2]] = entry[1]
+    end
+
+    local lines = GetTooltipLines(itemLink)
+    if lines then
+        local foundTrack, isMaxed = nil, false
+        for _, line in ipairs(lines) do
+            if not isMaxed then
+                local curr, max = line:match("(%d+)/(%d+)")
+                if curr and tonumber(curr) == tonumber(max) and tonumber(max) >= 5 then
+                    isMaxed = true
+                end
+            end
+            if not foundTrack then
+                for _, trackName in ipairs(ns.TRACK_ORDER) do
+                    for _, alias in ipairs(ns.TRACK_ALIASES[trackName]) do
+                        if line:find("%f[%a]" .. alias .. "%f[%A]") then
+                            foundTrack = trackName
+                            break
+                        end
+                    end
+                    if foundTrack then break end
+                end
+            end
+        end
+
+        if foundTrack then
+            local minIlvl = thresholdByName[foundTrack] or 0
+            if (itemLevel or 0) >= minIlvl then
+                -- ilvl confirms this is a current-season item on that track.
+                local key = (foundTrack == "Myth" and isMaxed) and "Maxed" or foundTrack
+                scanCache[itemLink] = key
+                return key
+            end
+            -- ilvl too low for the track name → old season gear, fall through to ilvl.
+        end
+    end
+
+    -- 4. ilvl fallback: crafted gear (stars, no track name) or old-season gear
+    --    whose tooltip track name doesn't match current season thresholds.
     if itemLevel and itemLevel > 0 then
         for _, entry in ipairs(ns.ILVL_TRACK_THRESHOLDS) do
             if itemLevel >= entry[1] then
-                local trackName = entry[2]
-                -- Myth-ilvl items: check for fully-upgraded X/X fraction.
-                if trackName == "Myth" then
-                    local lines = GetTooltipLines(itemLink)
-                    if lines then
-                        for _, line in ipairs(lines) do
-                            local curr, max = line:match("(%d+)/(%d+)")
-                            if curr and tonumber(curr) == tonumber(max)
-                                and tonumber(max) >= 5
-                            then
-                                scanCache[itemLink] = "Maxed"
-                                return "Maxed"
-                            end
-                        end
-                    end
-                end
-                scanCache[itemLink] = trackName
-                return trackName
+                scanCache[itemLink] = entry[2]
+                return entry[2]
             end
         end
     end
