@@ -1,5 +1,7 @@
 local addonName, ns = ...
 
+local GetItemInfo = _G.GetItemInfo or C_Item.GetItemInfo
+
 -- ── Bag button coloring ────────────────────────────────────────────────────
 -- Borders are applied lazily on hover (one item at a time, no bulk scan).
 -- On bag updates only existing borders are checked and cleared if the item

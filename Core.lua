@@ -1,5 +1,9 @@
 local addonName, ns = ...
 
+-- 12.1.5 removes the global item functions; prefer the global (12.1.0) and fall back to C_Item.
+local GetItemInfo         = _G.GetItemInfo or C_Item.GetItemInfo
+local GetItemQualityColor = _G.GetItemQualityColor or C_Item.GetItemQualityColor
+
 -- ── SavedVariables initialisation ─────────────────────────────────────────
 
 local function InitDB()
