@@ -129,6 +129,10 @@ local function ClassifyItem(itemLink)
     if lines then
         local foundTrack, isMaxed = nil, false
         for _, line in ipairs(lines) do
+            -- Venomforged (S2) gear ("Ascendant Venomforged: Myth/Hero") is only possible
+            -- on fully upgraded items. Myth → Maxed (via isMaxed below); Hero stays in the
+            -- Hero track. Voidforged (S1) is old-season and goes through the ilvl check.
+            if line:find("Venomforged", 1, true) then isMaxed = true end
             if not isMaxed then
                 local curr, max = line:match("(%d+)/(%d+)")
                 if curr and tonumber(curr) == tonumber(max) and tonumber(max) >= 5 then
@@ -455,6 +459,19 @@ SlashCmdList["GEARTRACKCOLORIZER"] = function(msg)
         ClearAllSlots()
         ns.ClearAllBagButtons()
         print("|cff00ff00Gear Track Colorizer:|r Disabled.")
+    elseif msg:match("^dump") then
+        -- Debug: /gtc dump <slotID> prints the tooltip lines + classification of an equipped item.
+        local slotID = tonumber(msg:match("^dump%s+(%d+)"))
+        local link = slotID and GetInventoryItemLink("player", slotID)
+        if not link then
+            print("|cffffcc00GTC:|r usage: /gtc dump <slotID>  (2=neck, 13/14=trinkets, 16=main hand)")
+        else
+            local _, _, q, ilvl = GetItemInfo(link)
+            print(string.format("|cffffcc00GTC dump|r slot %d  quality=%s ilvl=%s  class=%s", slotID, tostring(q), tostring(ilvl), tostring(ClassifyItem(link))))
+            for i, line in ipairs(GetTooltipLines(link) or {}) do
+                print(string.format("  %d: %s", i, line))
+            end
+        end
     elseif msg == "reload" or msg == "refresh" then
         UpdateAllSlots()
         ns.UpdateAllBagButtons()
